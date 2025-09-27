@@ -23,7 +23,7 @@ namespace LmpClient.Harmony
 
             foreach (var kerbal in __instance.Tourists)
             {
-                if (!HighLogic.CurrentGame.CrewRoster.Exists(kerbal))
+                if (!HighLogic.CurrentGame.CrewRoster.Crew.Any(c => c.name == kerbal))
                     KerbalSystem.Singleton.MessageSender.SendKerbalRemove(kerbal);
             }
         }
