@@ -30,13 +30,13 @@ namespace Server.System.Vessel
         public static void WriteFlightstateDataToFile(VesselBaseMsgData message)
         {
             if (!(message is VesselFlightStateMsgData msgData)) return;
-            if (VesselContext.RemovedVessels.Contains(msgData.VesselId)) return;
+            if (VesselContext.RemovedVessels.ContainsKey(msgData.VesselId)) return;
 
             if (!LastFlightStateUpdateDictionary.TryGetValue(msgData.VesselId, out var lastUpdated) || (DateTime.Now - lastUpdated).TotalMilliseconds > FileFlightStateUpdateIntervalMs)
             {
                 LastFlightStateUpdateDictionary.AddOrUpdate(msgData.VesselId, DateTime.Now, (key, existingVal) => DateTime.Now);
 
-                Task.Run(() =>
+                _ = Task.Run(() =>
                 {
                     lock (Semaphore.GetOrAdd(msgData.VesselId, new object()))
                     {

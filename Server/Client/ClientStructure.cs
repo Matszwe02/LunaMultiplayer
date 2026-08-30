@@ -19,6 +19,8 @@ namespace Server.Client
         public IPEndPoint Endpoint => Connection.RemoteEndPoint;
 
         public string UniqueIdentifier { get; set; }
+        public string KspVersion { get; set; }
+        public string LmpVersion { get; set; }
 
         public bool Authenticated { get; set; }
 
@@ -37,12 +39,14 @@ namespace Server.Client
         public int Subspace { get; set; } = int.MinValue; //Leave it as min value. When client connect we force them client side to go to latest subspace
         public float SubspaceRate { get; set; } = 1f;
 
+        public DateTime ConnectionTime { get; } = DateTime.UtcNow;
+
         public Task SendThread { get; }
 
         public ClientStructure(NetConnection playerConnection)
         {
             Connection = playerConnection;
-            SendThread = MainServer.LongRunTaskFactory.StartNew(() => SendMessagesThread(MainServer.CancellationTokenSrc.Token), MainServer.CancellationTokenSrc.Token);
+            SendThread = MainServer.LongRunTaskFactory.StartNew(() => SendMessagesThreadAsync(MainServer.CancellationTokenSrc.Token), MainServer.CancellationTokenSrc.Token);
         }
 
         public override bool Equals(object obj)
@@ -56,15 +60,19 @@ namespace Server.Client
             return Endpoint?.GetHashCode() ?? 0;
         }
 
-        private async void SendMessagesThread(CancellationToken token)
+        private const int MaxMessagesPerBatch = 128;
+
+        private async Task SendMessagesThreadAsync(CancellationToken token)
         {
             while (ConnectionStatus == ConnectionStatus.Connected)
             {
-                while (SendMessageQueue.TryDequeue(out var message) && message != null)
+                var sentCount = 0;
+                while (sentCount < MaxMessagesPerBatch && SendMessageQueue.TryDequeue(out var message) && message != null)
                 {
                     try
                     {
                         LidgrenServer.SendMessageToClient(this, message);
+                        sentCount++;
                     }
                     catch (Exception e)
                     {
@@ -74,6 +82,13 @@ namespace Server.Client
 
                     LmpPluginHandler.FireOnMessageSent(this, message);
                 }
+
+                if (sentCount > 0)
+                {
+                    LidgrenServer.FlushSendQueue();
+                    continue;
+                }
+
                 try
                 {
                     await Task.Delay(IntervalSettings.SettingsStore.SendReceiveThreadTickMs, token);

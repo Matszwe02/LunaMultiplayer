@@ -31,13 +31,13 @@ namespace Server.System.Vessel
         public static void WriteResourceDataToFile(VesselBaseMsgData message)
         {
             if (!(message is VesselResourceMsgData msgData)) return;
-            if (VesselContext.RemovedVessels.Contains(msgData.VesselId)) return;
+            if (VesselContext.RemovedVessels.ContainsKey(msgData.VesselId)) return;
 
             if (!LastResourcesUpdateDictionary.TryGetValue(msgData.VesselId, out var lastUpdated) || (DateTime.Now - lastUpdated).TotalMilliseconds > FileResourcesUpdateIntervalMs)
             {
                 LastResourcesUpdateDictionary.AddOrUpdate(msgData.VesselId, DateTime.Now, (key, existingVal) => DateTime.Now);
 
-                Task.Run(() =>
+                _ = Task.Run(() =>
                 {
                     lock (Semaphore.GetOrAdd(msgData.VesselId, new object()))
                     {

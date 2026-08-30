@@ -1,7 +1,10 @@
 ﻿using LmpCommon.Message.Data.ShareProgress;
 using LunaConfigNode.CfgNode;
-using System.Linq;
+using Server.Log;
+using System;
+using System.Collections.Generic;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace Server.System.Scenario
@@ -9,37 +12,136 @@ namespace Server.System.Scenario
     public partial class ScenarioDataUpdater
     {
         /// <summary>
-        /// We received a contract message so update the scenario file accordingly
+        /// KSP stores active and finished contracts together under a single CONTRACTS parent.
+        /// </summary>
+        private const string ContractsParentNodeName = "CONTRACTS";
+
+        /// <summary>
+        /// Child node name KSP expects for active contracts.
+        /// </summary>
+        private const string ActiveContractNodeName = "CONTRACT";
+
+        /// <summary>
+        /// Child node name KSP expects for archived/finished contracts.
+        /// Storing finished contracts as CONTRACT here causes them to load as Active
+        /// and never appear in the Mission Control "Archived" tab.
+        /// </summary>
+        private const string FinishedContractNodeName = "CONTRACT_FINISHED";
+
+        /// <summary>
+        /// Applies incoming contract updates by state-normalizing each node and upserting by guid.
+        /// The CONTRACTS parent is then rebuilt (clear + add) to avoid LunaConfigNode 1.8.1
+        /// RemoveNode list-sync issues that can leave stale duplicate entries on disk.
         /// </summary>
         public static void WriteContractDataToFile(ShareProgressContractsMsgData contractsMsg)
         {
-            Task.Run(() =>
+            ObserveBackgroundTask(Task.Run(() =>
             {
-                lock (Semaphore.GetOrAdd("ContractSystem", new object()))
+                try
                 {
-                    if (!ScenarioStoreSystem.CurrentScenarios.TryGetValue("ContractSystem", out var scenario)) return;
-
-                    var scenariosParentNode = scenario.GetNode("CONTRACTS")?.Value;
-                    if (scenariosParentNode == null) return;
-
-                    var existingContracts = scenariosParentNode.GetNodes("CONTRACT").Select(c => c.Value).ToArray();
-                    if (existingContracts.Any())
+                    lock (Semaphore.GetOrAdd("ContractSystem", new object()))
                     {
-                        foreach (var contract in contractsMsg.Contracts.Select(v => new ConfigNode(Encoding.UTF8.GetString(v.Data, 0, v.NumBytes)) { Name = "CONTRACT" }))
+                        if (!ScenarioStoreSystem.CurrentScenarios.TryGetValue("ContractSystem", out var scenario)) return;
+
+                        var contractsParent = scenario.GetNode(ContractsParentNodeName)?.Value;
+                        if (contractsParent == null)
                         {
-                            var specificContractNode = existingContracts.FirstOrDefault(n => n.GetValue("guid").Value == contract.GetValue("guid").Value);
-                            if (specificContractNode != null)
-                            {
-                                scenariosParentNode.ReplaceNode(specificContractNode, contract);
-                            }
-                            else
-                            {
-                                scenariosParentNode.AddNode(contract);
-                            }
+                            scenario.AddNode(new ConfigNode(ContractsParentNodeName, scenario));
+                            contractsParent = scenario.GetNode(ContractsParentNodeName)?.Value;
+                            if (contractsParent == null) return;
                         }
+
+                        var byGuid = IndexExistingContractsByGuid(contractsParent, out var unidentified);
+                        var nonContractChildren = CollectNonContractChildren(contractsParent);
+
+                        foreach (var contractInfo in contractsMsg.Contracts)
+                        {
+                            var incomingNode = ParseClientConfigNode(contractInfo.Data, contractInfo.NumBytes, ActiveContractNodeName);
+                            var stateValue = incomingNode.GetValue("state")?.Value;
+                            incomingNode.Name = IsFinishedContractState(stateValue) ? FinishedContractNodeName : ActiveContractNodeName;
+
+                            var guid = incomingNode.GetValue("guid")?.Value;
+                            if (string.IsNullOrEmpty(guid))
+                            {
+                                unidentified.Add(incomingNode);
+                                continue;
+                            }
+
+                            byGuid[guid] = incomingNode;
+                        }
+
+                        var survivors = new List<ConfigNode>(byGuid.Count + unidentified.Count);
+                        survivors.AddRange(byGuid.Values);
+                        survivors.AddRange(unidentified);
+
+                        RebuildContractsParent(contractsParent, nonContractChildren, survivors);
                     }
                 }
-            });
+                catch (Exception e)
+                {
+                    LunaLog.Error($"Error updating contract scenario data: {e}");
+                }
+            }));
+        }
+
+        private static void ObserveBackgroundTask(Task task)
+        {
+            if (task == null) return;
+
+            var ignored = task.ContinueWith(
+                t => LunaLog.Error($"Background contract update task failed: {t.Exception}"),
+                CancellationToken.None,
+                TaskContinuationOptions.OnlyOnFaulted,
+                TaskScheduler.Default);
+        }
+
+        /// <summary>
+        /// Builds a guid-keyed view of the contract children currently under the parent.
+        /// Entries without a guid are returned via <paramref name="unidentified"/> so they
+        /// can be preserved verbatim during the rebuild.
+        /// </summary>
+        private static Dictionary<string, ConfigNode> IndexExistingContractsByGuid(ConfigNode contractsParent, out List<ConfigNode> unidentified)
+        {
+            var index = new Dictionary<string, ConfigNode>();
+            unidentified = new List<ConfigNode>();
+
+            foreach (var child in contractsParent.GetAllNodes())
+            {
+                if (child.Name != ActiveContractNodeName && child.Name != FinishedContractNodeName)
+                    continue;
+
+                var guid = child.GetValue("guid")?.Value;
+                if (string.IsNullOrEmpty(guid))
+                {
+                    unidentified.Add(child);
+                    continue;
+                }
+
+                index[guid] = child;
+            }
+
+            return index;
+        }
+
+        /// <summary>
+        /// Returns true for contract states that KSP persists as CONTRACT_FINISHED.
+        /// Mirrors KSP's Contract.State enum members that drive ContractsFinished bucketing.
+        /// </summary>
+        internal static bool IsFinishedContractState(string state)
+        {
+            if (string.IsNullOrEmpty(state)) return false;
+
+            switch (state)
+            {
+                case "Completed":
+                case "Cancelled":
+                case "DeadlineExpired":
+                case "Failed":
+                case "Withdrawn":
+                    return true;
+                default:
+                    return false;
+            }
         }
     }
 }

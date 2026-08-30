@@ -176,9 +176,23 @@ namespace Lidgren.Network
 					LogWarning("Socket threw exception; would block - send buffer full? Increase in NetPeerConfiguration");
 					return false;
 				}
-				if (sx.SocketErrorCode == SocketError.ConnectionReset)
+				if (sx.SocketErrorCode == SocketError.ConnectionReset ||
+					sx.SocketErrorCode == SocketError.HostUnreachable ||
+					sx.SocketErrorCode == SocketError.NetworkUnreachable ||
+					sx.SocketErrorCode == SocketError.ConnectionAborted ||
+					sx.SocketErrorCode == SocketError.TimedOut ||
+					sx.SocketErrorCode == SocketError.AddressNotAvailable ||
+					sx.SocketErrorCode == SocketError.Interrupted ||
+					(int)sx.SocketErrorCode == 10065 ||
+					(int)sx.SocketErrorCode == 10051 ||
+					(int)sx.SocketErrorCode == 10054 ||
+					(int)sx.SocketErrorCode == 10053 ||
+					(int)sx.SocketErrorCode == 10060 ||
+					(int)sx.SocketErrorCode == 10049 ||
+					(int)sx.SocketErrorCode == 10004)
 				{
 					// connection reset by peer, aka connection forcibly closed aka "ICMP port unreachable"
+					// or host/network unreachable
 					connectionReset = true;
 					return false;
 				}
@@ -218,7 +232,20 @@ namespace Lidgren.Network
 					LogWarning("Socket threw exception; would block - send buffer full? Increase in NetPeerConfiguration");
 					return true;
 				}
-				if (sx.SocketErrorCode == SocketError.ConnectionReset)
+				if (sx.SocketErrorCode == SocketError.ConnectionReset ||
+					sx.SocketErrorCode == SocketError.HostUnreachable ||
+					sx.SocketErrorCode == SocketError.NetworkUnreachable ||
+					sx.SocketErrorCode == SocketError.ConnectionAborted ||
+					sx.SocketErrorCode == SocketError.TimedOut ||
+					sx.SocketErrorCode == SocketError.AddressNotAvailable ||
+					sx.SocketErrorCode == SocketError.Interrupted ||
+					(int)sx.SocketErrorCode == 10065 ||
+					(int)sx.SocketErrorCode == 10051 ||
+					(int)sx.SocketErrorCode == 10054 ||
+					(int)sx.SocketErrorCode == 10053 ||
+					(int)sx.SocketErrorCode == 10060 ||
+					(int)sx.SocketErrorCode == 10049 ||
+					(int)sx.SocketErrorCode == 10004)
 					return true;
 				LogError("Failed to send packet: (" + sx.SocketErrorCode + ") " + sx);
 			}
@@ -254,7 +281,20 @@ namespace Lidgren.Network
 					LogWarning("Socket threw exception; would block - send buffer full? Increase in NetPeerConfiguration");
 					return true;
 				}
-				if (sx.SocketErrorCode == SocketError.ConnectionReset)
+				if (sx.SocketErrorCode == SocketError.ConnectionReset ||
+					sx.SocketErrorCode == SocketError.HostUnreachable ||
+					sx.SocketErrorCode == SocketError.NetworkUnreachable ||
+					sx.SocketErrorCode == SocketError.ConnectionAborted ||
+					sx.SocketErrorCode == SocketError.TimedOut ||
+					sx.SocketErrorCode == SocketError.AddressNotAvailable ||
+					sx.SocketErrorCode == SocketError.Interrupted ||
+					(int)sx.SocketErrorCode == 10065 ||
+					(int)sx.SocketErrorCode == 10051 ||
+					(int)sx.SocketErrorCode == 10054 ||
+					(int)sx.SocketErrorCode == 10053 ||
+					(int)sx.SocketErrorCode == 10060 ||
+					(int)sx.SocketErrorCode == 10049 ||
+					(int)sx.SocketErrorCode == 10004)
 					return true;
 				LogError("Failed to send packet: (" + sx.SocketErrorCode + ") " + sx);
 			}
@@ -314,9 +354,23 @@ namespace Lidgren.Network
 					LogWarning("Socket threw exception; would block - send buffer full? Increase in NetPeerConfiguration");
 					return;
 				}
-				if (sx.SocketErrorCode == SocketError.ConnectionReset)
+				if (sx.SocketErrorCode == SocketError.ConnectionReset ||
+					sx.SocketErrorCode == SocketError.HostUnreachable ||
+					sx.SocketErrorCode == SocketError.NetworkUnreachable ||
+					sx.SocketErrorCode == SocketError.ConnectionAborted ||
+					sx.SocketErrorCode == SocketError.TimedOut ||
+					sx.SocketErrorCode == SocketError.AddressNotAvailable ||
+					sx.SocketErrorCode == SocketError.Interrupted ||
+					(int)sx.SocketErrorCode == 10065 ||
+					(int)sx.SocketErrorCode == 10051 ||
+					(int)sx.SocketErrorCode == 10054 ||
+					(int)sx.SocketErrorCode == 10053 ||
+					(int)sx.SocketErrorCode == 10060 ||
+					(int)sx.SocketErrorCode == 10049 ||
+					(int)sx.SocketErrorCode == 10004)
 				{
 					// connection reset by peer, aka connection forcibly closed aka "ICMP port unreachable"
+					// or host/network unreachable
 					connectionReset = true;
 					return;
 				}

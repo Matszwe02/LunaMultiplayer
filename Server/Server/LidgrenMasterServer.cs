@@ -24,7 +24,7 @@ namespace Server.Server
         public static ConcurrentBag<IPEndPoint> DetectedSTUNTransportAddresses { get; private set; } = new();
         public static readonly SemaphoreSlim ReceiveSTUNResponses = new(0, 1);
 
-        public static async void RegisterWithMasterServer()
+        public static async Task RegisterWithMasterServerAsync()
         {
             if (!MasterServerSettings.SettingsStore.RegisterWithMasterServer) return;
 
@@ -91,7 +91,7 @@ namespace Server.Server
 
         private static void RegisterWithMasterServer(MsRegisterServerMsgData msgData, IPEndPoint masterServer)
         {
-            Task.Run(() =>
+            _ = Task.Run(() =>
             {
                 var msg = ServerContext.MasterServerMessageFactory.CreateNew<MainMstSrvMsg>(msgData);
                 msg.Data.SentTime = LunaNetworkTime.UtcNow.Ticks;
@@ -118,7 +118,7 @@ namespace Server.Server
         /// of our message and comparing them.
         /// If they differ it means this server is behind symmetric NAT.
         /// </summary
-        public static async void CheckNATType()
+        public static async Task CheckNATTypeAsync()
         {
             var msgData = ServerContext.ServerMessageFactory.CreateNewMessageData<MsSTUNBindingRequestMsgData>();
             msgData.SentTime = LunaNetworkTime.UtcNow.Ticks;
@@ -139,15 +139,24 @@ namespace Server.Server
 
             // Wait two seconds for responses to arrive, then wait for any in-flight message to finish processing,
             await Task.Delay(2000);
-            ReceiveSTUNResponses.Wait();
+            await ReceiveSTUNResponses.WaitAsync();
 
             var distinctAddresses = DetectedSTUNTransportAddresses.Distinct();
             LunaLog.Debug("Detected NAT addresses: " + string.Join(", ", distinctAddresses.Select(a => a.ToString())));
 
             var numberDistinct = distinctAddresses.Count();
             if (numberDistinct > 1) {
-                LunaLog.Error("Symmetric NAT detected. " +
-                              "Players will not be able to join this server unless port forwarding is set up through UPnP or manually.");
+                if (ServerContext.Config.DualStack)
+                {
+                    LunaLog.Error("Symmetric NAT detected. " +
+                                  "Players will only be able to join this server via IPv6, unless port forwarding is set up, either through UPnP or manually.");
+                }
+                else
+                {
+                    LunaLog.Error("Symmetric NAT detected. " +
+                                  "Players will not be able to join this server unless port forwarding is set up through UPnP or manually. " +
+                                  "Consider enabling IPv6 in the server's connection settings so that players can still use the server.");
+                }
             }
             DetectedSTUNTransportAddresses = null;
         }
