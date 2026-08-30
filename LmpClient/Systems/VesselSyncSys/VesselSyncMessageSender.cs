@@ -44,17 +44,5 @@ namespace LmpClient.Systems.VesselSyncSys
 
             SendMessage(msgData);
         }
-
-        public void SendCustomWaypointSyncMsg(CustomWaypointMsgData waypointData)
-        {
-            SendMessage(waypointData);
-        }
-
-        public void SendCustomWaypointDeleteMsg(Guid waypointId)
-        {
-            var msgData = NetworkMain.CliMsgFactory.CreateNewMessageData<CustomWaypointDeleteMsgData>();
-            msgData.WaypointId = waypointId;
-            SendMessage(msgData);
-        }
     }
 }

@@ -17,7 +17,5 @@
         Decouple = 12,
         Couple = 13,
         Undock = 14,
-        CustomWaypointSync = 15,
-        CustomWaypointDelete = 16,
     }
 }
