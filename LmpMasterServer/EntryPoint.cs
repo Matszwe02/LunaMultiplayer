@@ -1,4 +1,5 @@
 ﻿using LmpCommon;
+using LmpCommon.RepoRetrievers;
 using LmpMasterServer.Dedicated;
 using LmpMasterServer.Http;
 using LmpMasterServer.Log;
@@ -23,10 +24,10 @@ namespace LmpMasterServer
         {
             Lidgren.MasterServer.RunServer = false;
             LunaHttpServer.Server.Dispose();
-            MasterServerPortMapper.RemoveOpenedPorts().Wait();
+            _ = Task.Run(MasterServerPortMapper.RemoveOpenedPortsAsync);
         }
 
-        public static void MainEntryPoint(string[] args)
+        public static async Task MainEntryPointAsync(string[] args)
         {
             MasterServerPortMapper.UseUpnp = !args.Any(a => a.Contains("noupnp"));
             IsNightly = args.Any(a => a.Contains("nightly"));
@@ -34,10 +35,12 @@ namespace LmpMasterServer
             {
                 ConsoleUtil.DisableConsoleQuickEdit();
 
+#pragma warning disable CA1416 // Platform compatibility check via Common.PlatformIsWindows()
                 Console.Title = $"LMP MasterServer {LmpVersioning.CurrentVersion}";
 
                 if (IsNightly)
                     Console.Title += " NIGHTLY";
+#pragma warning restore CA1416
             }
 
             Console.OutputEncoding = Encoding.UTF8;
@@ -51,7 +54,7 @@ namespace LmpMasterServer
 
             if (!ParseMasterServerPortNumber(commandLineArguments)) return;
             if (!ParseHttpServerPort(commandLineArguments)) return;
-            MasterServerPortMapper.OpenPort().GetAwaiter().GetResult();
+            await MasterServerPortMapper.OpenPortAsync();
 
             LunaLog.Normal($"Starting MasterServer at port: {Lidgren.MasterServer.Port}");
             if (IsNightly)
@@ -63,9 +66,31 @@ namespace LmpMasterServer
                 Lidgren.MasterServer.RunServer = true;
                 Http.Handlers.WebHandler.InitWebFiles();
                 LunaHttpServer.Start();
-                Task.Run(DedicatedServerRetriever.RefreshDedicatedServersList);
-                Task.Run(MasterServerPortMapper.RefreshUpnpPort);
-                Task.Run(Lidgren.MasterServer.Start);
+
+                // Fire background tasks with proper exception handling
+                // Use discard _ to explicitly indicate fire-and-forget pattern
+                _ = Task.Run(DedicatedServerRetriever.RefreshDedicatedServersListAsync)
+                    .ContinueWith(t => 
+                    {
+                        if (t.IsFaulted)
+                            LunaLog.Error($"Failed to refresh dedicated servers: {t.Exception?.InnerException?.Message}");
+                    }, TaskScheduler.Default);
+
+                BannedIpsRetriever.Prewarm();
+
+                _ = Task.Run(MasterServerPortMapper.RefreshUpnpPortAsync)
+                    .ContinueWith(t =>
+                    {
+                        if (t.IsFaulted)
+                            LunaLog.Error($"Failed to refresh UPnP port: {t.Exception?.InnerException?.Message}");
+                    }, TaskScheduler.Default);
+
+                _ = Task.Run(Lidgren.MasterServer.StartAsync)
+                    .ContinueWith(t =>
+                    {
+                        if (t.IsFaulted)
+                            LunaLog.Error($"Lidgren server startup failed: {t.Exception?.InnerException?.Message}");
+                    }, TaskScheduler.Default);
             }
         }
 

@@ -31,7 +31,7 @@ namespace Server.System
             if (client.PlayerName != data.CraftToDelete.FolderName)
                 return;
 
-            Task.Run(() =>
+            _ = Task.Run(() =>
             {
                 var file = Path.Combine(CraftPath, data.CraftToDelete.FolderName, data.CraftToDelete.CraftType.ToString(),
                     $"{data.CraftToDelete.CraftName}.craft");
@@ -51,7 +51,7 @@ namespace Server.System
         /// </summary>
         public static void SaveCraft(ClientStructure client, CraftLibraryDataMsgData data)
         {
-            Task.Run(() =>
+            _ = Task.Run(() =>
             {
                 var playerFolderType = Path.Combine(CraftPath, client.PlayerName, data.Craft.CraftType.ToString());
                 if (!Directory.Exists(playerFolderType))
@@ -66,11 +66,12 @@ namespace Server.System
                     var fileName = $"{data.Craft.CraftName}.craft";
                     var fullPath = Path.Combine(playerFolderType, fileName);
 
-                    if (FileHandler.FileExists(fullPath))
+                    var alreadyExisted = FileHandler.FileExists(fullPath);
+                    if (alreadyExisted)
                     {
                         LunaLog.Normal($"Overwriting craft {data.Craft.CraftName} ({ByteSize.FromBytes(data.Craft.NumBytes).KiloBytes}{ByteSize.KiloByteSymbol}) from: {client.PlayerName}.");
 
-                        //Send a msg to all the players so they remove the old copy
+                        //Tell all players to drop their cached copy before we replace the file on disk
                         var deleteMsg = ServerContext.ServerMessageFactory.CreateNewMessageData<CraftLibraryDeleteRequestMsgData>();
                         deleteMsg.CraftToDelete.CraftType = data.Craft.CraftType;
                         deleteMsg.CraftToDelete.CraftName = data.Craft.CraftName;
@@ -81,8 +82,10 @@ namespace Server.System
                     else
                     {
                         LunaLog.Normal($"Saving craft {data.Craft.CraftName} ({ByteSize.FromBytes(data.Craft.NumBytes).KiloBytes} KB) from: {client.PlayerName}.");
-                        FileHandler.WriteToFile(fullPath, data.Craft.Data, data.Craft.NumBytes);
                     }
+
+                    //Always persist the latest bytes, regardless of whether this is a new craft or an overwrite
+                    FileHandler.WriteToFile(fullPath, data.Craft.Data, data.Craft.NumBytes);
                     SendNotification(client.PlayerName);
                 }
                 else
@@ -104,7 +107,7 @@ namespace Server.System
         /// </summary>
         public static void SendCraftFolders(ClientStructure client)
         {
-            Task.Run(() =>
+            _ = Task.Run(() =>
             {
                 var msgData = ServerContext.ServerMessageFactory.CreateNewMessageData<CraftLibraryFoldersReplyMsgData>();
                 msgData.Folders = Directory.GetDirectories(CraftPath)
@@ -124,7 +127,7 @@ namespace Server.System
         /// </summary>
         public static void SendCraftList(ClientStructure client, CraftLibraryListRequestMsgData data)
         {
-            Task.Run(() =>
+            _ = Task.Run(() =>
             {
                 var crafts = new List<CraftBasicInfo>();
                 var playerFolder = Path.Combine(CraftPath, data.FolderName);
@@ -164,7 +167,7 @@ namespace Server.System
         /// </summary>
         public static void SendCraft(ClientStructure client, CraftLibraryDownloadRequestMsgData data)
         {
-            Task.Run(() =>
+            _ = Task.Run(() =>
             {
                 var lastTime = LastRequest.GetOrAdd(client.PlayerName, DateTime.MinValue);
                 if (DateTime.Now - lastTime > TimeSpan.FromMilliseconds(CraftSettings.SettingsStore.MinCraftLibraryRequestIntervalMs))

@@ -37,7 +37,7 @@
 - [x] [UDP](https://en.wikipedia.org/wiki/User_Datagram_Protocol) based using the [Lidgren](https://github.com/lidgren/lidgren-network-gen3) library for reliable UDP message handling.
 - [x] [Interpolation](http://www.gabrielgambetta.com/entity-interpolation.html) so the vessels won't jump when there are bad network conditions.
 - [x] Multilanguage.
-- [x] [Nat-punchtrough](../../wiki/Master-server) feature so a server doesn't need to open ports on it's router.
+- [x] [Nat-punchthrough](../../wiki/Master-server) feature so a server doesn't need to open ports on it's router.
 - [x] [IPv6](https://en.wikipedia.org/wiki/IPv6) support for client<->server connections, allowing connection setup even behind symmetric IPv4 NAT
 - [x] Servers displayed within the mod.
 - [x] Settings saved as XML.
@@ -60,7 +60,7 @@ Please visit [this page](../../wiki/Troubleshooting) in the wiki to solve the mo
 ---
 ### Contributing:
 
-Consider [donating trough paypal](https://paypal.me/gavazquez) if you like this project. 
+Consider [donating through paypal](https://paypal.me/gavazquez) if you like this project. 
 It will encourage us to do future releases, fix bugs and add new features :star:
 
 Please write the code as you were going to leave it, return after 1 year and you'd have to understand what you wrote.  
@@ -76,9 +76,8 @@ You can check [how many servers are up](../../wiki/Master-server-status) and run
 | Master server | Release | Nightly |
 | ------------  | ------- |-------- |
 [Dagger](https://github.com/gavazquez) | [![Release servers](https://img.shields.io/website-up-down-brightgreen-red/http/servers.lunamultiplayer.com:8701.svg?label=status)](http://servers.lunamultiplayer.com:8701) | [![Nightly servers](https://img.shields.io/website-up-down-brightgreen-red/http/servers.lunamultiplayer.com:8751.svg?label=status)](http://servers.lunamultiplayer.com:8751) |
-Tekbot | [![Release servers](https://img.shields.io/website-up-down-brightgreen-red/http/168.119.90.137:8701.svg?label=status)](http://168.119.90.137:8701) | [![Nightly servers](https://img.shields.io/website-up-down-brightgreen-red/http/168.119.90.137:8751.svg?label=status)](http://168.119.90.137:8751) |
-[Angryjoshi](https://github.com/Angryjoshi) | [![Release servers](https://img.shields.io/website-up-down-brightgreen-red/http/lmp.anschuetznet.de:8701.svg?label=status)](http://lmp.anschuetznet.de:8701) | [![Nightly servers](https://img.shields.io/website-up-down-brightgreen-red/http/lmp.anschuetznet.de:8751.svg?label=status)](http://lmp.anschuetznet.de:8751) |
-[Bloodfallen](https://github.com/Bloodfallen) | [![Release servers](https://img.shields.io/website-up-down-brightgreen-red/http/direct.imexile.moe:8701.svg?label=status)](http://direct.imexile.moe:8701) | [![Nightly servers](https://img.shields.io/website-up-down-brightgreen-red/http/direct.imexile.moe:8703.svg?label=status)](http://direct.imexile.moe:8703)|
+DasSkelett | [![Release servers](https://img.shields.io/website-up-down-brightgreen-red/https/ms.lmp.dasskelett.dev.svg?label=status)](https://ms.lmp.dasskelett.dev/) | [![Nightly servers](https://img.shields.io/website-up-down-brightgreen-red/https/ms-nightly.lmp.dasskelett.dev.svg?label=status)](https://ms-nightly.lmp.dasskelett.dev/) |
+Nightshade | [![Release servers](https://img.shields.io/website-up-down-brightgreen-red/https/lmp.nightshade.fun.svg?label=status)](https://lmp.nightshade.fun/) | [![Nightly servers](https://img.shields.io/website-up-down-brightgreen-red/https/lmp.nightshade.fun/nightly.svg?label=status)](https://lmp.nightshade.fun/nightly/) |
 
 ---
 ### Status:

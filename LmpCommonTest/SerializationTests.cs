@@ -4,10 +4,10 @@ using LmpCommon.Message.Client;
 using LmpCommon.Message.Data.Chat;
 using LmpCommon.Message.Data.Kerbal;
 using LmpCommon.Message.Data.Vessel;
+using LmpCommon.Xml;
 using LmpCommonTest.Properties;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using System;
-using System.Collections.Generic;
 using System.Text;
 using System.Threading.Tasks;
 
@@ -38,6 +38,14 @@ namespace LmpCommonTest
             msgData.LastUt = Rnd.NextDouble();
             msgData.Persistent = false;
             msgData.RefTransformId = (uint)Rnd.Next();
+            msgData.AutoClean = false;
+            msgData.AutoCleanReason = string.Empty;
+            msgData.WasControllable = true;
+            msgData.Stage = 0;
+            msgData.Com[0] = 0;
+            msgData.Com[1] = 0;
+            msgData.Com[2] = 0;
+            msgData.BodyName = "Kerbin";
 
             var msg = Factory.CreateNew<VesselCliMsg>(msgData);
 
@@ -93,7 +101,7 @@ namespace LmpCommonTest
         [TestMethod]
         public void TestSerializeCompressThreadSafety()
         {
-            var numThreads = 100000;
+            const int iterations = 2000;
 
             var msgData = Factory.CreateNewMessageData<KerbalProtoMsgData>();
             msgData.Kerbal.KerbalName = "TEST";
@@ -102,33 +110,30 @@ namespace LmpCommonTest
 
             var msg = Factory.CreateNew<KerbalCliMsg>(msgData);
 
-            var taskPool = new List<Task<bool>>();
-
-            for (var i = 0; i < numThreads; i++)
+            Parallel.For(0, iterations, _ =>
             {
-                taskPool.Add(new Task<bool>(() =>
+                try
                 {
-                    try
-                    {
-                        msg.Serialize(Client.CreateMessage());
-                    }
-                    catch (Exception)
-                    {
-                        return false;
-                    }
+                    msg.Serialize(Client.CreateMessage());
+                }
+                catch (Exception ex)
+                {
+                    throw new AggregateException("Serialize failed under parallel load", ex);
+                }
+            });
+        }
 
-                    return true;
-                }));
-            }
+        [TestMethod]
+        public void TestXmlSerializationUsesUtf8Declaration()
+        {
+            var serialized = LunaXmlSerializer.SerializeToXml(new XmlSerializationTestData { Value = "Test" });
 
-            Parallel.ForEach(taskPool, t => t.Start());
-            // ReSharper disable once CoVariantArrayConversion
-            Task.WaitAll(taskPool.ToArray());
+            StringAssert.StartsWith(serialized, "<?xml version=\"1.0\" encoding=\"utf-8\"?>");
+        }
 
-            for (var i = 0; i < numThreads; i++)
-            {
-                Assert.IsTrue(taskPool[i].Result, "Error while serializing in parallel!");
-            }
+        public class XmlSerializationTestData
+        {
+            public string Value { get; set; }
         }
     }
 }

@@ -436,10 +436,17 @@ namespace Lidgren.Network
                 switch (sx.SocketErrorCode)
                 {
                     case SocketError.ConnectionReset:
+                    case SocketError.HostUnreachable:
+                    case SocketError.NetworkUnreachable:
+                    case SocketError.ConnectionAborted:
+                    case SocketError.TimedOut:
+                    case SocketError.AddressNotAvailable:
+                    case SocketError.Interrupted:
                         // connection reset by peer, aka connection forcibly closed aka "ICMP port unreachable"
+                        // or host/network unreachable
                         // we should shut down the connection; but m_senderRemote seemingly cannot be trusted, so which connection should we shut down?!
                         // So, what to do?
-                        LogWarning("ConnectionReset");
+                        LogWarning(sx.SocketErrorCode.ToString());
                         return;
 
                     case SocketError.NotConnected:
@@ -448,6 +455,11 @@ namespace Lidgren.Network
                         return;
 
                     default:
+                        if ((int)sx.SocketErrorCode == 10065 || (int)sx.SocketErrorCode == 10051 || (int)sx.SocketErrorCode == 10054 || (int)sx.SocketErrorCode == 10053 || (int)sx.SocketErrorCode == 10060 || (int)sx.SocketErrorCode == 10049 || (int)sx.SocketErrorCode == 10004)
+                        {
+                            LogWarning(sx.SocketErrorCode.ToString());
+                            return;
+                        }
                         LogWarning("Socket exception: " + sx.ToString());
                         return;
                 }
@@ -642,6 +654,10 @@ namespace Lidgren.Network
 			//
 			switch (tp)
 			{
+				case NetMessageType.Ping:
+				case NetMessageType.Pong:
+					// silently ignore
+					return;
 				case NetMessageType.Discovery:
 					HandleIncomingDiscoveryRequest(now, senderEndPoint, ptr, payloadByteLength);
 					return;
