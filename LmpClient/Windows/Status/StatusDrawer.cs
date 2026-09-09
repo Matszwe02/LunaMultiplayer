@@ -14,6 +14,7 @@ using LmpClient.Windows.Options;
 using LmpClient.Windows.Screenshots;
 using LmpClient.Windows.Systems;
 using LmpClient.Windows.Vessels;
+using LmpCommon;
 using UnityEngine;
 
 namespace LmpClient.Windows.Status
