@@ -3,6 +3,7 @@ using LmpClient.Systems.CraftLibrary;
 using LmpClient.Systems.PlayerColorSys;
 using LmpClient.Systems.Screenshot;
 using LmpClient.Systems.SettingsSys;
+using LmpClient.Systems.Spectate;
 using LmpClient.Systems.Status;
 using LmpClient.Systems.Warp;
 using LmpClient.Windows.Admin;
@@ -13,7 +14,6 @@ using LmpClient.Windows.Options;
 using LmpClient.Windows.Screenshots;
 using LmpClient.Windows.Systems;
 using LmpClient.Windows.Vessels;
-using LmpCommon;
 using UnityEngine;
 
 namespace LmpClient.Windows.Status
@@ -130,6 +130,8 @@ namespace LmpClient.Windows.Status
             GUILayout.Label(playerStatus.PlayerName, _playerNameStyle[playerStatus.PlayerName]);
             GUILayout.FlexibleSpace();
             GUILayout.Label(playerStatus.DisplayText, _stateTextStyle);
+            if (SpectateSystem.Singleton.CanSpectatePlayer(playerStatus.PlayerName) && GUILayout.Button(StatusTexts.SpectateBtnTxt))
+                SpectateSystem.Singleton.SpectatePlayer(playerStatus.PlayerName);
             GUILayout.EndHorizontal();
         }
 
