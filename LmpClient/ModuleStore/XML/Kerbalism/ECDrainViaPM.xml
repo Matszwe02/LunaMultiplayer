@@ -1,0 +1,21 @@
+<?xml version="1.0"?>
+<ModuleDefinition xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+    <Fields>
+        <!-- Kerbalism ECDrainViaPM: planner drain toggle state -->
+        <FieldDefinition>
+            <FieldName>title</FieldName>
+        </FieldDefinition>
+        <FieldDefinition>
+            <FieldName>moduleTitle</FieldName>
+        </FieldDefinition>
+        <FieldDefinition>
+            <FieldName>targetModule</FieldName>
+        </FieldDefinition>
+        <FieldDefinition>
+            <FieldName>ec_rate</FieldName>
+        </FieldDefinition>
+        <FieldDefinition>
+            <FieldName>running</FieldName>
+        </FieldDefinition>
+    </Fields>
+</ModuleDefinition>

@@ -1,0 +1,32 @@
+<?xml version="1.0"?>
+<ModuleDefinition xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+    <Fields>
+        <!-- Kerbalism Sickbay: medical bay state and patients list -->
+        <FieldDefinition>
+            <FieldName>patients</FieldName>
+        </FieldDefinition>
+        <FieldDefinition>
+            <FieldName>running</FieldName>
+        </FieldDefinition>
+    </Fields>
+    <Methods>
+        <MethodDefinition>
+            <MethodName>Toggle</MethodName>
+        </MethodDefinition>
+        <MethodDefinition>
+            <MethodName>Toggle1</MethodName>
+        </MethodDefinition>
+        <MethodDefinition>
+            <MethodName>Toggle2</MethodName>
+        </MethodDefinition>
+        <MethodDefinition>
+            <MethodName>Toggle3</MethodName>
+        </MethodDefinition>
+        <MethodDefinition>
+            <MethodName>Toggle4</MethodName>
+        </MethodDefinition>
+        <MethodDefinition>
+            <MethodName>Toggle5</MethodName>
+        </MethodDefinition>
+    </Methods>
+</ModuleDefinition>

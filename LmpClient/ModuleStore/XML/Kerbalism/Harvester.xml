@@ -1,0 +1,20 @@
+<?xml version="1.0"?>
+<ModuleDefinition xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+    <Fields>
+        <!-- Kerbalism Harvester: ore/atmospheric harvester state -->
+        <FieldDefinition>
+            <FieldName>deployed</FieldName>
+        </FieldDefinition>
+        <FieldDefinition>
+            <FieldName>running</FieldName>
+        </FieldDefinition>
+        <FieldDefinition>
+            <FieldName>issue</FieldName>
+        </FieldDefinition>
+    </Fields>
+    <Methods>
+        <MethodDefinition>
+            <MethodName>Toggle</MethodName>
+        </MethodDefinition>
+    </Methods>
+</ModuleDefinition>

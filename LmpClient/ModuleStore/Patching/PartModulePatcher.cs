@@ -37,7 +37,12 @@ namespace LmpClient.ModuleStore.Patching
 
             foreach (var partModuleMethod in partModule.GetMethods(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly)
                 .Where(m => m.Name == "OnUpdate" || m.Name == "OnFixedUpdate" || m.Name == "FixedUpdate" || m.Name == "Update" || m.Name == "LateUpdate" ||
-                            m.GetCustomAttributes(typeof(KSPAction), false).Any() || m.GetCustomAttributes(typeof(KSPEvent), false).Any(a => ((KSPEvent)a).guiActive)))
+                            m.GetCustomAttributes(typeof(KSPAction), false).Any() ||
+                            //Kerbalism (and other mods) use editor-only and unfocused events (Harvester.Toggle, Reliability.Repair, Configure.ToggleWindow, ...)
+                            //that change persistent fields, so they must be patched too
+                            m.GetCustomAttributes(typeof(KSPEvent), false).Any(a => ((KSPEvent)a).guiActive || ((KSPEvent)a).guiActiveEditor || ((KSPEvent)a).guiActiveUnfocused) ||
+                            //Methods explicitly listed in the module customization (e.g. Kerbalism Configure.DoConfigure) also change persistent fields
+                            customizationModule.CustomizedMethods.ContainsKey(m.Name)))
             {
                 if (partModuleMethod.GetMethodBody() != null)
                 {

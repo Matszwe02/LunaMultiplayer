@@ -1,0 +1,9 @@
+<?xml version="1.0"?>
+<ModuleDefinition xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+    <Fields>
+        <!-- Kerbalism Comfort: comfort bonus string changes when comfort factors change -->
+        <FieldDefinition>
+            <FieldName>bonus</FieldName>
+        </FieldDefinition>
+    </Fields>
+</ModuleDefinition>

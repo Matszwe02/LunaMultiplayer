@@ -1,0 +1,51 @@
+<?xml version="1.0"?>
+<ModuleDefinition xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+    <Fields>
+        <!-- Kerbalism Experiment: science experiment state machine -->
+        <FieldDefinition>
+            <FieldName>issue</FieldName>
+        </FieldDefinition>
+        <FieldDefinition>
+            <FieldName>situationId</FieldName>
+        </FieldDefinition>
+        <FieldDefinition>
+            <FieldName>didPrepare</FieldName>
+        </FieldDefinition>
+        <FieldDefinition>
+            <FieldName>shrouded</FieldName>
+        </FieldDefinition>
+        <FieldDefinition>
+            <FieldName>remainingSampleMass</FieldName>
+        </FieldDefinition>
+        <FieldDefinition>
+            <FieldName>privateHdId</FieldName>
+        </FieldDefinition>
+        <FieldDefinition>
+            <FieldName>firstStart</FieldName>
+        </FieldDefinition>
+        <!-- these change continuously while running, throttle them -->
+        <FieldDefinition>
+            <FieldName>prodFactor</FieldName>
+            <MaxIntervalInMs>10000</MaxIntervalInMs>
+        </FieldDefinition>
+        <FieldDefinition>
+            <FieldName>expState</FieldName>
+            <MaxIntervalInMs>10000</MaxIntervalInMs>
+        </FieldDefinition>
+        <FieldDefinition>
+            <FieldName>status</FieldName>
+            <MaxIntervalInMs>10000</MaxIntervalInMs>
+        </FieldDefinition>
+    </Fields>
+    <Methods>
+        <MethodDefinition>
+            <MethodName>ToggleEvent</MethodName>
+        </MethodDefinition>
+        <MethodDefinition>
+            <MethodName>Prepare</MethodName>
+        </MethodDefinition>
+        <MethodDefinition>
+            <MethodName>Reset</MethodName>
+        </MethodDefinition>
+    </Methods>
+</ModuleDefinition>
