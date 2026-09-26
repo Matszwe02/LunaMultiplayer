@@ -1,0 +1,26 @@
+<?xml version="1.0"?>
+<ModuleDefinition xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+    <Fields>
+        <!-- Kerbalism Greenhouse: growth state and light levels -->
+        <FieldDefinition>
+            <FieldName>active</FieldName>
+        </FieldDefinition>
+        <FieldDefinition>
+            <FieldName>issue</FieldName>
+        </FieldDefinition>
+        <!-- natural/artificial light change continuously, throttle them -->
+        <FieldDefinition>
+            <FieldName>natural</FieldName>
+            <MaxIntervalInMs>30000</MaxIntervalInMs>
+        </FieldDefinition>
+        <FieldDefinition>
+            <FieldName>artificial</FieldName>
+            <MaxIntervalInMs>30000</MaxIntervalInMs>
+        </FieldDefinition>
+    </Fields>
+    <Methods>
+        <MethodDefinition>
+            <MethodName>Toggle</MethodName>
+        </MethodDefinition>
+    </Methods>
+</ModuleDefinition>

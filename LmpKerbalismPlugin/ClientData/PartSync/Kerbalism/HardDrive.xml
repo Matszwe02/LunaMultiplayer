@@ -1,0 +1,31 @@
+<?xml version="1.0"?>
+<ModuleDefinition xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+    <Fields>
+        <!-- Kerbalism HardDrive: drive identity and capacities.
+             The actual file/sample contents live in the Kerbalism scenario DB,
+             which is synchronized through the scenario system. -->
+        <FieldDefinition>
+            <FieldName>hdId</FieldName>
+        </FieldDefinition>
+        <FieldDefinition>
+            <FieldName>effectiveDataCapacity</FieldName>
+        </FieldDefinition>
+        <FieldDefinition>
+            <FieldName>effectiveSampleCapacity</FieldName>
+        </FieldDefinition>
+    </Fields>
+    <Methods>
+        <MethodDefinition>
+            <MethodName>ToggleUI</MethodName>
+        </MethodDefinition>
+        <MethodDefinition>
+            <MethodName>TransferData</MethodName>
+        </MethodDefinition>
+        <MethodDefinition>
+            <MethodName>TakeData</MethodName>
+        </MethodDefinition>
+        <MethodDefinition>
+            <MethodName>StoreData</MethodName>
+        </MethodDefinition>
+    </Methods>
+</ModuleDefinition>

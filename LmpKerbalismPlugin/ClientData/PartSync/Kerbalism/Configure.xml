@@ -1,0 +1,21 @@
+<?xml version="1.0"?>
+<ModuleDefinition xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+    <Fields>
+        <!-- Kerbalism Configure: selected setups and previous setups are serialized strings -->
+        <FieldDefinition>
+            <FieldName>cfg</FieldName>
+        </FieldDefinition>
+        <FieldDefinition>
+            <FieldName>prev_cfg</FieldName>
+        </FieldDefinition>
+    </Fields>
+    <Methods>
+        <!-- DoConfigure is called by the configure popup (OnGUI) and applies resource changes -->
+        <MethodDefinition>
+            <MethodName>DoConfigure</MethodName>
+        </MethodDefinition>
+        <MethodDefinition>
+            <MethodName>ToggleWindow</MethodName>
+        </MethodDefinition>
+    </Methods>
+</ModuleDefinition>

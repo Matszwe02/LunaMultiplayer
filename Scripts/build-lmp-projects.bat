@@ -37,6 +37,17 @@ if %BUILD_RELEASE%==1 (
     call :build Server\Server.csproj Server Release || exit /b 1
 )
 
+REM Standalone plugins are built after Server: LmpPluginHandler loads them from
+REM Server's DataDirectory\Plugins at startup and the plugin csproj copies its
+REM output there (see LmpKerbalismPlugin.csproj DeployToServerPlugins target).
+if %BUILD_DEBUG%==1 (
+    call :build LmpKerbalismPlugin\LmpKerbalismPlugin.csproj LmpKerbalismPlugin Debug || exit /b 1
+)
+
+if %BUILD_RELEASE%==1 (
+    call :build LmpKerbalismPlugin\LmpKerbalismPlugin.csproj LmpKerbalismPlugin Release || exit /b 1
+)
+
 if %BUILD_DEBUG%==1 (
     call :build MasterServer\MasterServer.csproj MasterServer Debug || exit /b 1
 )

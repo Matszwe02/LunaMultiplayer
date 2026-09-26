@@ -69,6 +69,11 @@ IF DEFINED KSPPATH2 (xcopy /Y /S "%~dp0..\LmpClient\Localization\XML\*.*" "%KSPP
 xcopy /Y /S "%~dp0..\LmpClient\ModuleStore\XML\*.xml" "%KSPPATH%\GameData\LunaMultiplayer\PartSync"
 IF DEFINED KSPPATH2 (xcopy /Y /S "%~dp0..\LmpClient\ModuleStore\XML\*.xml" "%KSPPATH2%\GameData\LunaMultiplayer\PartSync")
 
+REM Standalone plugin client data (e.g. LmpKerbalismPlugin ships the Kerbalism
+REM part module sync definitions) deployed next to the core ModuleStore XMLs.
+xcopy /Y /S "%~dp0..\LmpKerbalismPlugin\bin\%SOLUTIONCONFIGURATION%\net10.0\ClientData\PartSync\*.xml" "%KSPPATH%\GameData\LunaMultiplayer\PartSync"
+IF DEFINED KSPPATH2 (xcopy /Y /S "%~dp0..\LmpKerbalismPlugin\bin\%SOLUTIONCONFIGURATION%\net10.0\ClientData\PartSync\*.xml" "%KSPPATH2%\GameData\LunaMultiplayer\PartSync")
+
 xcopy /Y "%~dp0..\LmpClient\Resources\Icons\*.*" "%KSPPATH%\GameData\LunaMultiplayer\Icons"
 IF DEFINED KSPPATH2 (xcopy /Y "%~dp0..\LmpClient\Resources\Icons\*.*" "%KSPPATH2%\GameData\LunaMultiplayer\Icons")
 

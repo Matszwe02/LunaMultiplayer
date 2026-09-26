@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using LmpClient;
 using LmpClient.Extensions;
 using LmpClient.VesselUtilities;
@@ -18,7 +19,39 @@ namespace LmpClient.Systems.VesselResourceSys
         public int ResourcesCount;
         public VesselResourceInfo[] Resources = new VesselResourceInfo[0];
 
+        private const int WarningThrottleSeconds = 30;
+        private static readonly Dictionary<string, (DateTime LastLoggedUtc, int Suppressed)> RecentWarnings =
+            new Dictionary<string, (DateTime, int)>();
+
         #endregion
+
+        /// <summary>
+        /// Logs a warning at most once every <see cref="WarningThrottleSeconds"/> per key.
+        /// Resource updates arrive every 2.5s per vessel, so a single unmatched part used to
+        /// flood the log with one line per resource; the suppressed count is appended instead.
+        /// </summary>
+        private static void LogThrottled(string key, string message)
+        {
+            var now = DateTime.UtcNow;
+            lock (RecentWarnings)
+            {
+                if (RecentWarnings.Count > 1000)
+                    RecentWarnings.Clear();
+
+                if (RecentWarnings.TryGetValue(key, out var entry) && (now - entry.LastLoggedUtc).TotalSeconds < WarningThrottleSeconds)
+                {
+                    RecentWarnings[key] = (entry.LastLoggedUtc, entry.Suppressed + 1);
+                    return;
+                }
+
+                var suppressed = RecentWarnings.TryGetValue(key, out var oldEntry) ? oldEntry.Suppressed : 0;
+                RecentWarnings[key] = (now, 0);
+
+                LunaLog.LogWarning(suppressed > 0
+                    ? $"{message} (suppressed {suppressed} identical messages in the last {WarningThrottleSeconds}s)"
+                    : message);
+            }
+        }
 
         public void ProcessVesselResource()
         {
@@ -49,16 +82,28 @@ namespace LmpClient.Systems.VesselResourceSys
                 //The part may have been removed (e.g. destroyed by a collision) while this update was in flight, skip it
                 if (partSnapshot == null)
                 {
-                    LunaLog.LogWarning(
-                        $"[LMP]: Skipping ProtoPart resource write due to failure to match (vessel {VesselId}, part {Resources[i].PartFlightId}, resource '{Resources[i].ResourceName}', reason: proto part not found).");
+                    if (Resources[i].PartFlightId == 0)
+                    {
+                        LogThrottled($"zeropart-{VesselId}",
+                            $"[LMP]: Skipping ProtoPart resource write for vessel {VesselId} ({vessel.vesselName}), resource '{Resources[i].ResourceName}' - " +
+                            "the sender's vessel proto contains a part with flightID 0 (broken proto on the sending client). " +
+                            "Waiting for the next full vessel update to recover.");
+                    }
+                    else
+                    {
+                        LogThrottled($"part-{VesselId}-{Resources[i].PartFlightId}",
+                            $"[LMP]: Skipping ProtoPart resource write due to failure to match (vessel {VesselId} ({vessel.vesselName}), " +
+                            $"part {Resources[i].PartFlightId}, resource '{Resources[i].ResourceName}', reason: proto part not found).");
+                    }
                     continue;
                 }
 
                 var resourceSnapshot = partSnapshot.FindResourceInProtoPart(Resources[i].ResourceName);
                 if (resourceSnapshot == null)
                 {
-                    LunaLog.LogWarning(
-                        $"[LMP]: Skipping ProtoPart resource write due to failure to match (vessel {VesselId}, part {Resources[i].PartFlightId}, resource '{Resources[i].ResourceName}', reason: proto resource not found).");
+                    LogThrottled($"resource-{VesselId}-{Resources[i].PartFlightId}-{Resources[i].ResourceName}",
+                        $"[LMP]: Skipping ProtoPart resource write due to failure to match (vessel {VesselId} ({vessel.vesselName}), " +
+                        $"part {Resources[i].PartFlightId}, resource '{Resources[i].ResourceName}', reason: proto resource not found).");
                     continue;
                 }
 
@@ -80,7 +125,9 @@ namespace LmpClient.Systems.VesselResourceSys
                         }
                         else
                         {
-                            LunaLog.LogWarning($"[LMP]: Skipping ProtoPart resource write due to failure to match (vessel {VesselId}, part {Resources[i].PartFlightId}, resource '{resourceSnapshot.resourceName}', reason: live resource not found on part).");
+                            LogThrottled($"live-{VesselId}-{Resources[i].PartFlightId}-{resourceSnapshot.resourceName}",
+                                $"[LMP]: Skipping ProtoPart resource write due to failure to match (vessel {VesselId} ({vessel.vesselName}), " +
+                                $"part {Resources[i].PartFlightId}, resource '{resourceSnapshot.resourceName}', reason: live resource not found on part).");
                         }
                     }
                 }

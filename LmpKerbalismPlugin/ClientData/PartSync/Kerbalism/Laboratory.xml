@@ -1,0 +1,17 @@
+<?xml version="1.0"?>
+<ModuleDefinition xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+    <Fields>
+        <!-- Kerbalism Laboratory: science lab running state -->
+        <FieldDefinition>
+            <FieldName>running</FieldName>
+        </FieldDefinition>
+    </Fields>
+    <Methods>
+        <MethodDefinition>
+            <MethodName>Toggle</MethodName>
+        </MethodDefinition>
+        <MethodDefinition>
+            <MethodName>CleanExperiments</MethodName>
+        </MethodDefinition>
+    </Methods>
+</ModuleDefinition>

@@ -61,7 +61,8 @@ RUN case "${TARGETARCH}" in \
     arm) DOTNET_RID=linux-musl-arm ;; \
     *) echo "Unsupported TARGETARCH=${TARGETARCH}"; exit 1 ;; \
   esac && \
-  dotnet publish -c Release -r ${DOTNET_RID} --self-contained true -o Publish
+  dotnet publish -c Release -r ${DOTNET_RID} --self-contained true -o Publish && \
+  dotnet publish /LunaMultiplayer/LmpKerbalismPlugin/LmpKerbalismPlugin.csproj -c Release -o Publish/Plugins
 
 FROM ${OS_BASE}:${OS_VERSION}
 RUN apk add icu-libs libstdc++ libgcc
@@ -71,3 +72,8 @@ VOLUME "/LMPServer/Config" "/LMPServer/Plugins" "/LMPServer/Universe" "/LMPServe
 STOPSIGNAL SIGINT
 WORKDIR /LMPServer
 CMD ./Server
+
+# LmpKerbalismPlugin.dll and its ClientData/PartSync definitions are published
+# into /LMPServer/Plugins above. NOTE: docker-compose.yml mounts a host folder
+# over /LMPServer/Plugins, which shadows anything baked into the image; copy
+# the plugin files into that host folder for compose deployments.

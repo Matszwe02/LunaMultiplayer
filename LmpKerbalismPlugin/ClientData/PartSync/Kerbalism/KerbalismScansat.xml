@@ -1,0 +1,27 @@
+<?xml version="1.0"?>
+<ModuleDefinition xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+    <Fields>
+        <!-- KerbalismScansat: orbital scanner state, coverage changes
+             continuously while scanning so it is throttled -->
+        <FieldDefinition>
+            <FieldName>sensorType</FieldName>
+        </FieldDefinition>
+        <FieldDefinition>
+            <FieldName>body_name</FieldName>
+        </FieldDefinition>
+        <FieldDefinition>
+            <FieldName>body_coverage</FieldName>
+            <MaxIntervalInMs>30000</MaxIntervalInMs>
+        </FieldDefinition>
+        <FieldDefinition>
+            <FieldName>warp_buffer</FieldName>
+            <MaxIntervalInMs>30000</MaxIntervalInMs>
+        </FieldDefinition>
+        <FieldDefinition>
+            <FieldName>power_disabled</FieldName>
+        </FieldDefinition>
+        <FieldDefinition>
+            <FieldName>storage_disabled</FieldName>
+        </FieldDefinition>
+    </Fields>
+</ModuleDefinition>

@@ -708,11 +708,23 @@ namespace LmpClient.VesselUtilities
             var reloadingOwnVessel = FlightGlobals.ActiveVessel && vesselProto.vesselID == FlightGlobals.ActiveVessel.id;
             var hadExistingVessel = false;
 
+            //Back up the existing vessel's proto BEFORE destroying it. If the incoming reload
+            //fails after the destruction (vesselRef null, NaN orbit, exceptions during Load)
+            //we can restore the last-known-good vessel instead of leaving it removed from
+            //FlightGlobals until the player switches to it or reconnects. This was observed
+            //when a peer teleported a vessel: the wire proto failed to produce a valid orbit
+            //and the vessel vanished from other clients' vessel lists (e.g. the Kerbalism
+            //monitor, which iterates FlightGlobals.Vessels).
+            ConfigNode previousVesselNode = null;
+            var existingVesselId = Guid.Empty;
+
             //In case the vessel exists, silently remove them from unity and recreate it again
             var existingVessel = FlightGlobals.FindVessel(vesselProto.vesselID);
             if (existingVessel != null)
             {
                 hadExistingVessel = true;
+                existingVesselId = existingVessel.id;
+
                 // Compute structural counts using the in-world ProtoVessel as the source of truth
                 // when the existing vessel is unloaded/packed. For unloaded vessels (every vessel
                 // in the Tracking Station, every non-active vessel in flight) Vessel.parts is
@@ -740,6 +752,16 @@ namespace LmpClient.VesselUtilities
                 }
 
                 LunaLog.Log($"[LMP]: Reloading vessel {vesselProto.vesselID}");
+                try
+                {
+                    previousVesselNode = new ConfigNode();
+                    existingVessel.protoVessel?.Save(previousVesselNode);
+                }
+                catch (Exception e)
+                {
+                    LunaLog.LogWarning($"[LMP]: Could not back up existing vessel {existingVesselId} before reload: {e.Message}");
+                }
+
                 if (reloadingOwnVessel)
                     existingVessel.RemoveAllCrew();
 
@@ -771,82 +793,143 @@ namespace LmpClient.VesselUtilities
                 LunaLog.Log($"[LMP]: Loading vessel {vesselProto.vesselID}");
             }
 
-            // Pre-Load DiscoveryInfo guard. Guarantees vesselProto.discoveryInfo is a
-            // non-null ConfigNode with all five fields (state/lastObservedTime/lifetime/
-            // refTime/size) present and finite. This is the precondition that keeps stock
-            // KSP off its synthesise-default-then-parse-Infinity branch inside
-            // ProtoVessel.Load, which is what the FormatException stack trace hits when
-            // a vessel arrives with no DISCOVERY sub-node in its wire ConfigNode (typical
-            // for stations/probes/relays/EVAs/flags from peers that never had to give the
-            // vessel a tracking lifetime). Detailed rationale lives on EnsureSafeDiscoveryInfo.
-            DiscoveryInfoSanitizer.EnsureSafeDiscoveryInfo(vesselProto);
-
-            vesselProto.Load(HighLogic.CurrentGame.flightState);
-            if (vesselProto.vesselRef == null)
+            try
             {
-                LunaLog.Log($"[LMP]: Protovessel {vesselProto.vesselID} failed to create a vessel!");
+                // Pre-Load DiscoveryInfo guard. Guarantees vesselProto.discoveryInfo is a
+                // non-null ConfigNode with all five fields (state/lastObservedTime/lifetime/
+                // refTime/size) present and finite. This is the precondition that keeps stock
+                // KSP off its synthesise-default-then-parse-Infinity branch inside
+                // ProtoVessel.Load, which is what the FormatException stack trace hits when
+                // a vessel arrives with no DISCOVERY sub-node in its wire ConfigNode (typical
+                // for stations/probes/relays/EVAs/flags from peers that never had to give the
+                // vessel a tracking lifetime). Detailed rationale lives on EnsureSafeDiscoveryInfo.
+                DiscoveryInfoSanitizer.EnsureSafeDiscoveryInfo(vesselProto);
+
+                vesselProto.Load(HighLogic.CurrentGame.flightState);
+                if (vesselProto.vesselRef == null)
+                {
+                    LunaLog.Log($"[LMP]: Protovessel {vesselProto.vesselID} failed to create a vessel!");
+                    CleanUpFailedVesselLoad(vesselProto);
+                    TryRestorePreviousVessel(previousVesselNode, vesselProto.vesselID);
+                    return VesselLoadOutcome.Failed;
+                }
+
+                // Strip null entries from each ProtoPartSnapshot.protoModuleCrew that stock KSP just
+                // appended when wire-side crew names failed to resolve through CrewRoster. Has to run
+                // AFTER vesselProto.Load (which is what populates protoModuleCrew from the wire
+                // ConfigNode) and BEFORE the corruption walks / scene→FLIGHT transition. See the full
+                // rationale on ScrubInvalidProtoCrew itself.
+                ScrubInvalidProtoCrew(vesselProto);
+
+                LogPostLoadVesselSanity(vesselProto);
+                ScheduleDeferredPostStartSanityWalk(vesselProto);
+
+                VesselPositionSystem.Singleton.ForceUpdateVesselPosition(vesselProto.vesselRef.id);
+
+                vesselProto.vesselRef.protoVessel = vesselProto;
+                if (vesselProto.vesselRef.isEVA)
+                {
+                    var evaModule = vesselProto.vesselRef.FindPartModuleImplementing<KerbalEVA>();
+                    if (evaModule != null && evaModule.fsm != null && !evaModule.fsm.Started)
+                    {
+                        evaModule.fsm?.StartFSM("Idle (Grounded)");
+                    }
+                    vesselProto.vesselRef.GoOnRails();
+                }
+
+                if (vesselProto.vesselRef.situation > Vessel.Situations.PRELAUNCH)
+                {
+                    vesselProto.vesselRef.orbitDriver.updateFromParameters();
+                }
+
+                if (double.IsNaN(vesselProto.vesselRef.orbitDriver.pos.x))
+                {
+                    LunaLog.Log($"[LMP]: Protovessel {vesselProto.vesselID} has an invalid orbit");
+                    CleanUpFailedVesselLoad(vesselProto);
+                    TryRestorePreviousVessel(previousVesselNode, vesselProto.vesselID);
+                    return VesselLoadOutcome.Failed;
+                }
+
+                if (reloadingOwnVessel)
+                {
+                    vesselProto.vesselRef.Load();
+                    vesselProto.vesselRef.RebuildCrewList();
+
+                    //Do not do the setting of the active vessel manually, too many systems are dependant of the events triggered by KSP
+                    FlightGlobals.ForceSetActiveVessel(vesselProto.vesselRef);
+
+                    vesselProto.vesselRef.SpawnCrew();
+                    foreach (var crew in vesselProto.vesselRef.GetVesselCrew())
+                    {
+                        ProtoCrewMember._Spawn(crew);
+                        if (crew.KerbalRef)
+                            crew.KerbalRef.state = Kerbal.States.ALIVE;
+                    }
+
+                    if (KerbalPortraitGallery.Instance.ActiveCrewItems.Count != vesselProto.vesselRef.GetCrewCount())
+                    {
+                        KerbalPortraitGallery.Instance.StartReset(FlightGlobals.ActiveVessel);
+                    }
+                }
+            }
+            catch (Exception e)
+            {
+                //The old vessel was already destroyed above, so an exception here used to leave
+                //the vessel permanently removed from FlightGlobals until the player entered it
+                //or reconnected. Clean the partial state and bring back the last-known-good vessel.
+                LunaLog.LogError($"[LMP]: Exception while loading vessel {vesselProto.vesselID}: {e}");
+                try
+                {
+                    SaveFailedProtoVesselToDisk(vesselProto, e);
+                }
+                catch (Exception dumpEx)
+                {
+                    LunaLog.LogWarning($"[LMP]: Could not dump failed vessel proto {vesselProto.vesselID}: {dumpEx.Message}");
+                }
+
+                CleanUpFailedVesselLoad(vesselProto);
+                TryRestorePreviousVessel(previousVesselNode, vesselProto.vesselID);
                 return VesselLoadOutcome.Failed;
-            }
-
-            // Strip null entries from each ProtoPartSnapshot.protoModuleCrew that stock KSP just
-            // appended when wire-side crew names failed to resolve through CrewRoster. Has to run
-            // AFTER vesselProto.Load (which is what populates protoModuleCrew from the wire
-            // ConfigNode) and BEFORE the corruption walks / scene→FLIGHT transition. See the full
-            // rationale on ScrubInvalidProtoCrew itself.
-            ScrubInvalidProtoCrew(vesselProto);
-
-            LogPostLoadVesselSanity(vesselProto);
-            ScheduleDeferredPostStartSanityWalk(vesselProto);
-
-            VesselPositionSystem.Singleton.ForceUpdateVesselPosition(vesselProto.vesselRef.id);
-
-            vesselProto.vesselRef.protoVessel = vesselProto;
-            if (vesselProto.vesselRef.isEVA)
-            {
-                var evaModule = vesselProto.vesselRef.FindPartModuleImplementing<KerbalEVA>();
-                if (evaModule != null && evaModule.fsm != null && !evaModule.fsm.Started)
-                {
-                    evaModule.fsm?.StartFSM("Idle (Grounded)");
-                }
-                vesselProto.vesselRef.GoOnRails();
-            }
-
-            if (vesselProto.vesselRef.situation > Vessel.Situations.PRELAUNCH)
-            {
-                vesselProto.vesselRef.orbitDriver.updateFromParameters();
-            }
-
-            if (double.IsNaN(vesselProto.vesselRef.orbitDriver.pos.x))
-            {
-                LunaLog.Log($"[LMP]: Protovessel {vesselProto.vesselID} has an invalid orbit");
-                return VesselLoadOutcome.Failed;
-            }
-
-            if (reloadingOwnVessel)
-            {
-                vesselProto.vesselRef.Load();
-                vesselProto.vesselRef.RebuildCrewList();
-
-                //Do not do the setting of the active vessel manually, too many systems are dependant of the events triggered by KSP
-                FlightGlobals.ForceSetActiveVessel(vesselProto.vesselRef);
-
-                vesselProto.vesselRef.SpawnCrew();
-                foreach (var crew in vesselProto.vesselRef.GetVesselCrew())
-                {
-                    ProtoCrewMember._Spawn(crew);
-                    if (crew.KerbalRef)
-                        crew.KerbalRef.state = Kerbal.States.ALIVE;
-                }
-
-                if (KerbalPortraitGallery.Instance.ActiveCrewItems.Count != vesselProto.vesselRef.GetCrewCount())
-                {
-                    KerbalPortraitGallery.Instance.StartReset(FlightGlobals.ActiveVessel);
-                }
             }
 
             //Only the destructive-reload branch and the brand-new-vessel branch reach
             //here; the structure-matches early-out returned UnchangedEarlyOut above.
             return hadExistingVessel ? VesselLoadOutcome.Reloaded : VesselLoadOutcome.FreshlyLoaded;
+        }
+
+        /// <summary>
+        /// Re-loads the previously backed-up <see cref="ProtoVessel"/> of a vessel whose reload
+        /// failed after the old vessel was already destroyed. Keeps the vessel present in
+        /// FlightGlobals (and therefore in mod vessel lists like Kerbalism's monitor) with its
+        /// last-known-good orbit, parts and resources instead of silently vanishing.
+        /// </summary>
+        private static void TryRestorePreviousVessel(ConfigNode previousVesselNode, Guid vesselId)
+        {
+            if (previousVesselNode == null || vesselId == Guid.Empty) return;
+
+            try
+            {
+                if (HighLogic.CurrentGame?.flightState == null) return;
+
+                var restoreProto = new ProtoVessel(previousVesselNode, HighLogic.CurrentGame);
+                DiscoveryInfoSanitizer.EnsureSafeDiscoveryInfo(restoreProto);
+                restoreProto.Load(HighLogic.CurrentGame.flightState);
+
+                if (restoreProto.vesselRef != null)
+                {
+                    restoreProto.vesselRef.protoVessel = restoreProto;
+                    LunaLog.LogWarning($"[LMP]: Restored previous state of vessel {vesselId} after a failed reload " +
+                                       "(vessel stays in the game instead of vanishing until re-entry/reconnect).");
+                }
+                else
+                {
+                    LunaLog.LogError($"[LMP]: Failed to restore previous vessel {vesselId} after a failed reload.");
+                }
+            }
+            catch (Exception e)
+            {
+                LunaLog.LogError($"[LMP]: Could not restore previous vessel {vesselId} after failed reload: {e.Message}");
+            }
         }
 
         #endregion

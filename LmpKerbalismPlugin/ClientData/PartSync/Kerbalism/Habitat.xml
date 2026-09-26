@@ -1,0 +1,24 @@
+<?xml version="1.0"?>
+<ModuleDefinition xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+    <Fields>
+        <!-- Kerbalism Habitat: pressurization/deployment state -->
+        <FieldDefinition>
+            <FieldName>state</FieldName>
+        </FieldDefinition>
+        <FieldDefinition>
+            <FieldName>perctDeployed</FieldName>
+            <MaxIntervalInMs>5000</MaxIntervalInMs>
+        </FieldDefinition>
+    </Fields>
+    <Methods>
+        <MethodDefinition>
+            <MethodName>Vent</MethodName>
+        </MethodDefinition>
+        <MethodDefinition>
+            <MethodName>Toggle</MethodName>
+        </MethodDefinition>
+        <MethodDefinition>
+            <MethodName>Equalize</MethodName>
+        </MethodDefinition>
+    </Methods>
+</ModuleDefinition>

@@ -31,6 +31,7 @@ namespace LmpClient.Systems.VesselResourceSys
         {
             base.OnDisabled();
             VesselResources.Clear();
+            MessageSender.ClearZeroFlightIdWarnings();
         }
 
         #endregion
