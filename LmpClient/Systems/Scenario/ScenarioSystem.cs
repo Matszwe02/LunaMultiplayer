@@ -1,4 +1,4 @@
-﻿using LmpClient.Base;
+using LmpClient.Base;
 using LmpClient.Extensions;
 using LmpClient.Systems.SettingsSys;
 using LmpClient.Systems.ShareContracts;
@@ -208,6 +208,7 @@ namespace LmpClient.Systems.Scenario
 
         public void LoadScenarioDataIntoGame()
         {
+            var entries = new List<ScenarioEntry>();
             while (ScenarioQueue.TryDequeue(out var scenarioEntry))
             {
                 if (scenarioEntry == null)
@@ -225,81 +226,134 @@ namespace LmpClient.Systems.Scenario
                     continue;
                 }
 
-                if (scenarioEntry.ScenarioModule == "ContractPreLoader")
+                entries.Add(scenarioEntry);
+            }
+
+            // KSP instantiates scenario modules in game.scenarios order. Stock saves put
+            // ResearchAndDevelopment before third-party modules (e.g. Kerbalism), and
+            // Kerbalism.OnLoad -> DB.Load -> ScienceDB.Load calls
+            // ResearchAndDevelopment.GetSubjects(), which returns null while the R&D
+            // component has not been created yet (GetSubjects() returns null when
+            // ResearchAndDevelopment.Instance == null), so Kerbalism's save load dies with
+            // "Kerbalism.OnLoad FATAL ERROR : ... NullReferenceException at ScienceDB.Load".
+            // The server relays scenario modules in its internal dictionary order, which
+            // commonly sends Kerbalism before ResearchAndDevelopment, so add R&D first (when
+            // received) and keep the received order for everything else.
+            var orderedEntries = new List<ScenarioEntry>(entries.Count);
+            ScenarioEntry researchEntry = null;
+            foreach (var entry in entries)
+            {
+                if (researchEntry == null && entry.ScenarioModule == "ResearchAndDevelopment")
                 {
-                    // Inject the full Offered contract nodes that were saved when the server's
-                    // ContractSystem scenario was received.  KSPCF's ContractPreLoader.OnLoad
-                    // will deserialise these and store them internally.  When CC's
-                    // onContractsLoaded handler subsequently calls GenerateContracts(0), KSPCF's
-                    // patched implementation restores every contract whose GUID is in
-                    // ContractPreLoader's list rather than clearing them all.
-                    // Without this injection the list is empty → all 43 server contracts are
-                    // cleared → 0 Available in Mission Control for non-lock-holders.
-                    try
-                    {
-                        InjectServerContractsIntoPreLoader(scenarioEntry.ScenarioNode);
-                    }
-                    catch (Exception e)
-                    {
-                        LunaLog.LogError($"[ContractPreLoader]: Error injecting server contracts into ContractPreLoader node: {e.Message}");
-                    }
-                }
-
-                if (scenarioEntry.ScenarioModule == "ContractSystem")
-                {
-                    try
-                    {
-                        var migrated = MigrateFinishedContractsIntoMain(scenarioEntry.ScenarioNode);
-                        if (migrated > 0)
-                            LunaLog.Log($"[ShareContracts]: Migrated {migrated} contract(s) from CONTRACTS_FINISHED into CONTRACTS with correct state so ReconcileFinishedContracts can place them in the Archive tab.");
-                    }
-                    catch (Exception e)
-                    {
-                        LunaLog.LogError($"[ShareContracts]: Error migrating CONTRACTS_FINISHED into CONTRACTS: {e.Message}. The scenario will be loaded as-is.");
-                    }
-
-                    Dictionary<string, (string TypeName, string MissingAsset)> stripped = null;
-                    try
-                    {
-                        stripped = StripContractsWithMissingParts(scenarioEntry.ScenarioNode);
-                    }
-                    catch (Exception e)
-                    {
-                        LunaLog.LogError($"[ShareContracts]: Error while pre-filtering ContractSystem scenario data: {e.Message}. The scenario will be loaded as-is.");
-                    }
-
-                    try
-                    {
-                        ShareContracts.ShareContractsSystem.Singleton?.PrepareUnavailableContractStubs(scenarioEntry.ScenarioNode, stripped);
-                    }
-                    catch (Exception e)
-                    {
-                        LunaLog.LogError($"[ShareContracts]: Error while preparing unavailability stubs: {e.Message}.");
-                    }
-                }
-
-
-                ProtoScenarioModule psm;
-                try
-                {
-                    psm = new ProtoScenarioModule(scenarioEntry.ScenarioNode);
-                }
-                catch (Exception e)
-                {
-                    LunaLog.LogError(
-                        $"[LMP]: Failed to apply scenario '{scenarioEntry.ScenarioModule}' (ConfigNode could not be copied into ProtoScenarioModule). {e}");
+                    researchEntry = entry;
                     continue;
                 }
 
-                if (IsScenarioModuleAllowed(psm.moduleName) && !IgnoredScenarios.IgnoreReceive.Contains(psm.moduleName))
+                orderedEntries.Add(entry);
+            }
+
+            if (researchEntry != null)
+                orderedEntries.Insert(0, researchEntry);
+
+            foreach (var orderedEntry in orderedEntries)
+            {
+                ApplyScenarioEntry(orderedEntry);
+            }
+        }
+
+        private void ApplyScenarioEntry(ScenarioEntry scenarioEntry)
+        {
+            if (scenarioEntry.ScenarioModule == "ContractPreLoader")
+            {
+                // Inject the full Offered contract nodes that were saved when the server's
+                // ContractSystem scenario was received.  KSPCF's ContractPreLoader.OnLoad
+                // will deserialise these and store them internally.  When CC's
+                // onContractsLoaded handler subsequently calls GenerateContracts(0), KSPCF's
+                // patched implementation restores every contract whose GUID is in
+                // ContractPreLoader's list rather than clearing them all.
+                // Without this injection the list is empty → all 43 server contracts are
+                // cleared → 0 Available in Mission Control for non-lock-holders.
+                try
                 {
-                    LunaLog.Log($"[LMP]: Loading {psm.moduleName} scenario data");
-                    HighLogic.CurrentGame.scenarios.Add(psm);
+                    InjectServerContractsIntoPreLoader(scenarioEntry.ScenarioNode);
                 }
-                else
+                catch (Exception e)
                 {
-                    LunaLog.Log($"[LMP]: Skipping {psm.moduleName} scenario data in {SettingsSystem.ServerSettings.GameMode} mode");
+                    LunaLog.LogError($"[ContractPreLoader]: Error injecting server contracts into ContractPreLoader node: {e.Message}");
                 }
+            }
+
+            if (scenarioEntry.ScenarioModule == "ContractSystem")
+            {
+                try
+                {
+                    var migrated = MigrateFinishedContractsIntoMain(scenarioEntry.ScenarioNode);
+                    if (migrated > 0)
+                        LunaLog.Log($"[ShareContracts]: Migrated {migrated} contract(s) from CONTRACTS_FINISHED into CONTRACTS with correct state so ReconcileFinishedContracts can place them in the Archive tab.");
+                }
+                catch (Exception e)
+                {
+                    LunaLog.LogError($"[ShareContracts]: Error migrating CONTRACTS_FINISHED into CONTRACTS: {e.Message}. The scenario will be loaded as-is.");
+                }
+
+                Dictionary<string, (string TypeName, string MissingAsset)> stripped = null;
+                try
+                {
+                    stripped = StripContractsWithMissingParts(scenarioEntry.ScenarioNode);
+                }
+                catch (Exception e)
+                {
+                    LunaLog.LogError($"[ShareContracts]: Error while pre-filtering ContractSystem scenario data: {e.Message}. The scenario will be loaded as-is.");
+                }
+
+                try
+                {
+                    ShareContracts.ShareContractsSystem.Singleton?.PrepareUnavailableContractStubs(scenarioEntry.ScenarioNode, stripped);
+                }
+                catch (Exception e)
+                {
+                    LunaLog.LogError($"[ShareContracts]: Error while preparing unavailability stubs: {e.Message}.");
+                }
+            }
+
+            if (scenarioEntry.ScenarioModule == "ResearchAndDevelopment")
+            {
+                try
+                {
+                    var strippedParts = StripExpPartsWithMissingParts(scenarioEntry.ScenarioNode);
+                    if (strippedParts > 0)
+                        LunaLog.LogWarning($"[LMP]: Removed {strippedParts} experimental part(s) from the ResearchAndDevelopment scenario " +
+                                           "that are not installed on this client. Stock ResearchAndDevelopment.OnLoad throws " +
+                                           "ArgumentNullException for them, which aborts the module load before its science " +
+                                           "dictionary is initialized and makes Kerbalism's ScienceDB.Load fail as well.");
+                }
+                catch (Exception e)
+                {
+                    LunaLog.LogError($"[LMP]: Error while pre-filtering ResearchAndDevelopment scenario data: {e.Message}. The scenario will be loaded as-is.");
+                }
+            }
+
+
+            ProtoScenarioModule psm;
+            try
+            {
+                psm = new ProtoScenarioModule(scenarioEntry.ScenarioNode);
+            }
+            catch (Exception e)
+            {
+                LunaLog.LogError(
+                    $"[LMP]: Failed to apply scenario '{scenarioEntry.ScenarioModule}' (ConfigNode could not be copied into ProtoScenarioModule). {e}");
+                return;
+            }
+
+            if (IsScenarioModuleAllowed(psm.moduleName) && !IgnoredScenarios.IgnoreReceive.Contains(psm.moduleName))
+            {
+                LunaLog.Log($"[LMP]: Loading {psm.moduleName} scenario data");
+                HighLogic.CurrentGame.scenarios.Add(psm);
+            }
+            else
+            {
+                LunaLog.Log($"[LMP]: Skipping {psm.moduleName} scenario data in {SettingsSystem.ServerSettings.GameMode} mode");
             }
         }
 
@@ -472,8 +526,7 @@ namespace LmpClient.Systems.Scenario
 
         private static void StripContractSectionWithMissingParts(ConfigNode scenarioNode, string sectionName,
             Dictionary<string, (string TypeName, string MissingAsset)> strippedOut)
-        {
-            var sectionNode = scenarioNode.GetNode(sectionName);
+        {            var sectionNode = scenarioNode.GetNode(sectionName);
             if (sectionNode == null) return;
 
             var contractNodes = sectionNode.GetNodes("CONTRACT");
@@ -513,6 +566,38 @@ namespace LmpClient.Systems.Scenario
 
                 sectionNode.AddNode(contractNode);
             }
+        }
+
+        /// <summary>
+        /// Removes entries from the ResearchAndDevelopment scenario's ExpParts node whose part
+        /// name is not loaded on this client. Stock <c>ResearchAndDevelopment.OnLoad</c> feeds
+        /// every ExpParts value into
+        /// <c>experimentalPartsStock.Add(PartLoader.getPartInfoByName(value.name), int.Parse(value.value))</c>
+        /// and ArgumentNullExceptions when another player's scenario contains a part from a mod
+        /// this client does not have installed. The exception aborts the module load before the
+        /// science dictionary is initialized, which in turn makes Kerbalism's
+        /// <c>ScienceDB.Load</c> fail on <c>ResearchAndDevelopment.GetSubjects()</c>, so the
+        /// client cannot start the game. Returns the number of removed entries.
+        /// </summary>
+        private static int StripExpPartsWithMissingParts(ConfigNode scenarioNode)
+        {
+            var expParts = scenarioNode.GetNode("ExpParts");
+            if (expParts == null) return 0;
+
+            var toRemove = new List<string>();
+            foreach (ConfigNode.Value value in expParts.values)
+            {
+                if (!string.IsNullOrEmpty(value.name) && PartLoader.getPartInfoByName(value.name) == null)
+                    toRemove.Add(value.name);
+            }
+
+            foreach (var partName in toRemove)
+            {
+                LunaLog.LogWarning($"[LMP]: Removing experimental part '{partName}' from the received ResearchAndDevelopment scenario — not installed on this client.");
+                expParts.RemoveValue(partName);
+            }
+
+            return toRemove.Count;
         }
 
         /// <summary>

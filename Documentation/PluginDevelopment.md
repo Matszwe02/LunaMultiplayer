@@ -160,11 +160,32 @@ A server plugin can therefore ship a **client data payload** next to its DLL:
   manually or via `Scripts\CopyToKSPDirectory.bat`, which now also copies plugin
   client data into the PartSync folder.
 
+**Device write paths must be listed as `Methods`.** The transpiler only sees a field
+change that happens *inside* a patched method (the module's own `Update`/`FixedUpdate`,
+its `KSPAction`/`KSPEvent` methods, or a `CustomizedMethods` entry). When a mod's own
+code — e.g. Kerbalism's Automation tab devices and scripts — writes the field through a
+plain method (`ProcessDevice.Ctrl` → `ProcessController.SetRunning`), that method must
+be in the module XML's `Methods` or the change is never observed and never synced. Same
+for reflection-only callbacks (`ReliabilityEvent`/`ReliablityEvent`, spelling is
+Kerbalism's). Methods that only mutate another module's fields are covered transitively
+by that module's own patched update loop.
+
+Scene caveat: this mechanism only sees **loaded** `PartModule` writes, i.e. flight.
+Kerbalism's Monitor AUTO page ("Control and automate components") drives **proto**
+devices in the Tracking Station (`ProtoDevice.Ctrl` → `Lib.Proto.Set`), writing straight
+into the local proto snapshot; LMP has no observer for proto edits and no full-proto send
+path out of non-flight scenes (all sends are flight-scene and update-lock gated), so
+tracking-station toggles are local-only. In flight the same page drives the loaded
+modules (`Device.Ctrl` → `SetRunning`/`Toggle()`/...) and syncs through the mechanisms
+above; other players then see the change in their own Tracking Station views because
+`PartSyncField` applies into their stored protovessels.
+
 ## 4. Docker deployment
 
 `docker-compose.yml` + `Dockerfile_Server` build and run the server in
 `lunamultiplayer` (port 8800/udp). The Dockerfile publishes the server **and** the
-plugin projects (`LmpKerbalismPlugin.csproj`) into `/LMPServer/Plugins/`.
+plugin projects (`LmpKerbalismPlugin.csproj`, `LmpKopernicusPlugin.csproj`) into
+`/LMPServer/Plugins/`.
 
 Caveat: the compose file bind-mounts a host folder over `/LMPServer/Plugins`
 (`./../opt/LMPServer/Plugins`), which **shadows** anything baked into the image. For
@@ -175,6 +196,8 @@ compose deployments, copy the plugin files into the host folder before starting:
 New-Item -ItemType Directory -Force -Path ..\opt\LMPServer\Plugins | Out-Null
 Copy-Item LmpKerbalismPlugin\bin\Release\net10.0\LmpKerbalismPlugin.dll ..\opt\LMPServer\Plugins\
 Copy-Item LmpKerbalismPlugin\bin\Release\net10.0\ClientData ..\opt\LMPServer\Plugins -Recurse -Force
+Copy-Item LmpKopernicusPlugin\bin\Release\net10.0\LmpKopernicusPlugin.dll ..\opt\LMPServer\Plugins\
+Copy-Item LmpKopernicusPlugin\bin\Release\net10.0\ClientData ..\opt\LMPServer\Plugins -Recurse -Force
 docker compose up -d --build
 ```
 
@@ -202,3 +225,44 @@ docker compose up -d --build
   - `VesselLoader`: backs up the existing proto vessel before a destructive reload and
     restores the last-known-good state when the reload fails, keeping vessels listed in
     FlightGlobals (e.g. Kerbalism's monitor) instead of letting them vanish.
+
+### 5.1 `LmpKopernicusPlugin`
+
+Ships the client-side PartSync definitions for Kopernicus's vessel modules and
+deliberately registers **no** mod handler: vanilla Kopernicus never sends LMP mod
+payloads, so there is no protocol to answer. The definitions cover
+`KopernicusSolarPanel` — the multi-star solar panel control/automation module
+Kopernicus injects in place of stock panels (and of Kerbalism's SolarPanelFixer on
+Kopernicus-only installs): tracked star (`trackedSunIndex`), manual vs. automatic
+tracking (`manualTracking`), deploy `state`, `nominalRate` and `launchUT`, plus the
+`ManualTracking` ("Select Tracked Star") event. Without them the panel state never
+reaches the other players' protovessels. Derived per-frame fields
+(`panelStatus*`, `currentOutput`) and config-only components
+(`ModuleSurfaceObjectTrigger`, `HazardousBody`) are intentionally not synced.
+
+### 5.2 Received-scenario hardening
+
+`ScenarioSystem.LoadScenarioDataIntoGame` rebuilds the game from the server's scenario
+nodes, so a node written by a player with mods that another client lacks can abort the
+whole game load. Two stock cases are pre-filtered on receive:
+
+- `ContractSystem`: contracts referencing parts the client doesn't have (or body
+  indices out of range) are stripped and replaced with informative stubs
+  (`StripContractsWithMissingParts`).
+- `ResearchAndDevelopment`: the `ExpParts` node lists part names; stock
+  `ResearchAndDevelopment.OnLoad` does
+  `experimentalPartsStock.Add(PartLoader.getPartInfoByName(name), int.Parse(value))`
+  and throws `ArgumentNullException` for a part from a mod the client doesn't have
+  (e.g. `cryoengine-hecate-1` from CryoTanks). The abort leaves R&D's science
+  dictionary uninitialized, so Kerbalism's `ScienceDB.Load` then fails on
+  `ResearchAndDevelopment.GetSubjects()` and the client cannot start the game.
+  `StripExpPartsWithMissingParts` removes such entries before the module is applied.
+- Module ordering: `LoadScenarioDataIntoGame` adds the received
+  `ResearchAndDevelopment` module **first**, before all other modules. KSP instantiates
+  scenario modules in `game.scenarios` order, stock saves always place R&D before
+  third-party modules, and Kerbalism's `ScienceDB.Load` calls
+  `ResearchAndDevelopment.GetSubjects()` — which returns null while the R&D component
+  does not exist yet. The server relays modules in its internal dictionary order
+  (commonly Kerbalism before R&D), which made every career load die with
+  "Kerbalism.OnLoad FATAL ERROR : ... NullReferenceException at ScienceDB.Load [0x0028d]"
+  (sandbox loads are unaffected because the R&D branch is skipped there).
