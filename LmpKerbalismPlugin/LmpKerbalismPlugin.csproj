@@ -2,49 +2,35 @@
 
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
-    <RootNamespace>LmpKerbalismPlugin</RootNamespace>
+    <RootNamespace>KerbalismSync.Server</RootNamespace>
     <AssemblyName>LmpKerbalismPlugin</AssemblyName>
-    <Nullable>disable</Nullable>
+    <Description>Server-side state store for the Kerbalism multiplayer plugin.</Description>
+    <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
     <Version>1.0.0</Version>
-    <Description>LunaMultiPlayer standalone plugin providing Kerbalism mod support.
-Ships the server-side mod handler plus the client-side ModuleStore
-(Kerbalism part module sync) definitions under ClientData/PartSync.</Description>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- Types consumed by the plugin: ILmpPlugin/LmpPlugin, LmpModInterface,
-         ClientStructure, ModDataSystemSender, LunaLog. LmpCommon message types
-         (IClientMessageBase/IServerMessageBase) arrive transitively.
-         Private=false keeps the referenced assemblies out of the plugin output:
-         the server itself already loads them, LmpPluginHandler only needs the
-         plugin DLL in DataDirectory/Plugins. -->
+    <Compile Include="KerbalismPlugin.cs" />
+    <Compile Include="KerbalismStateStore.cs" />
+    <Compile Include="KerbalismAuthority.cs" />
+    <Compile Include="Shared\Protocol.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Not copied to the server's Plugins folder: the plugin only uses types that are
+         already loaded there by the host process. -->
     <ProjectReference Include="..\Server\Server.csproj" Private="false" />
   </ItemGroup>
 
-  <ItemGroup>
-    <!-- Client-side Kerbalism part module sync definitions. FieldModuleStore
-         reads them at runtime from GameData/LunaMultiplayer/PartSync, so they
-         ship as data instead of being compiled into the LmpClient core. -->
-    <Content Include="ClientData\PartSync\**\*.xml">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
-  </ItemGroup>
-
-  <PropertyGroup>
-    <!-- The server resolves plugins from ServerContext.DataDirectory/Plugins,
-         i.e. the folder the server executable runs from. -->
-    <ServerPluginsDir>$(MSBuildThisFileDirectory)..\Server\bin\$(Configuration)\$(TargetFramework)\Plugins</ServerPluginsDir>
-  </PropertyGroup>
-
   <Target Name="DeployToServerPlugins" AfterTargets="Build">
-    <MakeDir Directories="$(ServerPluginsDir)" />
-    <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(ServerPluginsDir)" SkipUnchangedFiles="true" />
-    <ItemGroup>
-      <_KerbalismClientData Include="ClientData\PartSync\**\*.xml" />
-    </ItemGroup>
-    <Copy SourceFiles="@(_KerbalismClientData)"
-          DestinationFiles="@(_KerbalismClientData->'$(ServerPluginsDir)\ClientData\PartSync\%(RecursiveDir)%(Filename)%(Extension)')"
-          SkipUnchangedFiles="true" />
+    <PropertyGroup>
+      <PluginTargetDir>$(MSBuildThisFileDirectory)..\Server\bin\$(Configuration)\net10.0\Plugins</PluginTargetDir>
+    </PropertyGroup>
+    <MakeDir Directories="$(PluginTargetDir)" />
+    <Copy SourceFiles="$(OutputPath)$(AssemblyName).dll" DestinationFolder="$(PluginTargetDir)" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="$(OutputPath)$(AssemblyName).pdb" DestinationFolder="$(PluginTargetDir)" SkipUnchangedFiles="true"
+          Condition="Exists('$(OutputPath)$(AssemblyName).pdb')" />
   </Target>
 
 </Project>

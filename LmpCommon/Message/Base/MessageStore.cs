@@ -20,6 +20,9 @@ namespace LmpCommon.Message.Base
 
         internal static void RecycleMessage(IMessageBase message)
         {
+            if (message.Data is IMessageDataResettable resettable)
+                resettable.Reset();
+
             if (!MessageDataDictionary.TryGetValue(message.Data.ClassName, out var dataBag))
             {
                 dataBag = new ConcurrentBag<IMessageData>();

@@ -27,6 +27,21 @@ namespace LmpClient.Systems.VesselPartSyncFieldSys
                 case PartSyncFieldType.Integer:
                     value.IntValue = msgData.IntValue;
                     break;
+                case PartSyncFieldType.Short:
+                    value.ShortValue = msgData.ShortValue;
+                    break;
+                case PartSyncFieldType.UShort:
+                    value.UShortValue = msgData.UShortValue;
+                    break;
+                case PartSyncFieldType.UInteger:
+                    value.UIntValue = msgData.UIntValue;
+                    break;
+                case PartSyncFieldType.Long:
+                    value.LongValue = msgData.LongValue;
+                    break;
+                case PartSyncFieldType.ULong:
+                    value.ULongValue = msgData.ULongValue;
+                    break;
                 case PartSyncFieldType.Float:
                     value.FloatValue = msgData.FloatValue;
                     break;
@@ -51,7 +66,10 @@ namespace LmpClient.Systems.VesselPartSyncFieldSys
                     value.StrValue = msgData.StrValue.Clone() as string;
                     break;
                 default:
-                    throw new ArgumentOutOfRangeException();
+                    //Every type is legal on the wire, so an unhandled one used to disconnect the player.
+                    LunaLog.LogError($"[LMP] Unsupported part sync field type {value.FieldType} for '{value.ModuleName}.{value.FieldName}' " +
+                                     $"(vessel {value.VesselId}, part {value.PartFlightId}). Field dropped.");
+                    break;
             }
         }
     }

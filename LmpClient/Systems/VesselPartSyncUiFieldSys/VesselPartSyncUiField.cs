@@ -3,6 +3,7 @@ using LmpClient.Extensions;
 using LmpClient.VesselUtilities;
 using LmpCommon.Enums;
 using System;
+using System.Collections.Generic;
 
 namespace LmpClient.Systems.VesselPartSyncUiFieldSys
 {
@@ -46,26 +47,47 @@ namespace LmpClient.Systems.VesselPartSyncUiFieldSys
                     {
                         case PartSyncFieldType.Boolean:
                             module.moduleValues.SetValue(FieldName, BoolValue);
-                            if (module.moduleRef != null)
-                                module.moduleRef.Fields[FieldName].SetValue(BoolValue, module.moduleRef);
+                            SetLiveField(module, BoolValue);
                             PartModuleEvent.onPartModuleBoolFieldProcessed.Fire(module, FieldName, BoolValue);
                             break;
                         case PartSyncFieldType.Integer:
                             module.moduleValues.SetValue(FieldName, IntValue);
-                            if (module.moduleRef != null)
-                                module.moduleRef.Fields[FieldName].SetValue(IntValue, module.moduleRef);
+                            SetLiveField(module, IntValue);
                             PartModuleEvent.onPartModuleIntFieldProcessed.Fire(module, FieldName, IntValue);
                             break;
                         case PartSyncFieldType.Float:
                             module.moduleValues.SetValue(FieldName, FloatValue);
-                            if (module.moduleRef != null)
-                                module.moduleRef.Fields[FieldName].SetValue(FloatValue, module.moduleRef);
+                            SetLiveField(module, FloatValue);
                             PartModuleEvent.onPartModuleFloatFieldProcessed.Fire(module, FieldName, FloatValue);
                             break;
                         default:
-                            throw new ArgumentOutOfRangeException();
+                            //The message type only carries bool/int/float, but never let a bad
+                            //value type disconnect the player
+                            LunaLog.LogError($"[LMP] Unsupported UI part sync field type {FieldType} for '{ModuleName}.{FieldName}'. Field dropped.");
+                            break;
                     }
                 }
+            }
+        }
+
+        /// <summary>
+        /// Writes the value into the live PartModule as well as the proto. The indexer throws for any
+        /// field that is not a registered <see cref="BaseField"/> - most fields a mod exposes as a
+        /// plain property - and that escapes the message handler, so skip it: the proto write above
+        /// has already succeeded.
+        /// </summary>
+        private void SetLiveField(ProtoPartModuleSnapshot module, object value)
+        {
+            if (module.moduleRef == null)
+                return;
+
+            try
+            {
+                module.moduleRef.Fields[FieldName].SetValue(value, module.moduleRef);
+            }
+            catch (KeyNotFoundException)
+            {
+                LunaLog.LogWarning($"[LMP] '{ModuleName}.{FieldName}' is not a registered part field, so the live module was not updated (the proto value was).");
             }
         }
     }

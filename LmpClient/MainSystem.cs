@@ -2,6 +2,7 @@
 using HarmonyLib;
 using KSP.UI.Screens;
 using LmpClient.Base;
+using LmpClient.ClientPlugins;
 using LmpClient.Diagnostics;
 using LmpClient.Events.Base;
 using LmpClient.Localization;
@@ -53,6 +54,7 @@ namespace LmpClient
                 }
                 _networkState = value;
                 NetworkSystem.NetworkStatus = value;
+                LmpClientPluginHandler.OnNetworkStateChanged(value);
             }
         }
 
@@ -155,6 +157,7 @@ namespace LmpClient
                 HandleWindowEvents();
                 SystemsHandler.Update();
                 WindowsHandler.Update();
+                LmpClientPluginHandler.Update();
 
                 //Force quit
                 if (ForceQuit)
@@ -295,6 +298,11 @@ namespace LmpClient
 
             FieldModuleStore.ReadCustomizationXml();
             LmpBaseEvent.Awake();
+
+            //Client plugins load after the base events exist (so they can subscribe to them)
+            //and before the Harmony patches are installed (so they can add their own).
+            LmpClientPluginHandler.Awake();
+
             HarmonyPatcher.Awake();
             PartModuleRunner.Awake();
             SetupDirectoriesIfNeeded();
@@ -347,6 +355,7 @@ namespace LmpClient
 
         public void OnExit()
         {
+            LmpClientPluginHandler.Shutdown();
             NetworkConnection.Disconnect("Quit game");
             NetworkState = ClientState.Disconnected;
             LunaLog.ProcessLogMessages();

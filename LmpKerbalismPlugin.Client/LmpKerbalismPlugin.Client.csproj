@@ -1,0 +1,86 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net472</TargetFramework>
+    <RootNamespace>KerbalismSync.Client</RootNamespace>
+    <AssemblyName>LmpKerbalismPlugin.Client</AssemblyName>
+    <Description>Client-side Kerbalism state synchronisation for LunaMultiplayer.</Description>
+    <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
+    <Version>1.0.0</Version>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <LangVersion>latest</LangVersion>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="KerbalismClientPlugin.cs" />
+    <Compile Include="KerbalismApi.cs" />
+    <Compile Include="KerbalismVesselState.cs" />
+    <Compile Include="KerbalismPartFields.cs" />
+    <Compile Include="DriveState.cs" />
+    <Compile Include="..\LmpKerbalismPlugin\Shared\Protocol.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Only LmpKerbalismPlugin.Client.dll ships. Everything LMP already loads in the
+         KSP process must be referenced for compile time but never copied here, or the
+         plugin folder ends up with a second copy of LmpCommon/Lidgren that can drift
+         out of step with the one LMP is actually using. -->
+    <ProjectReference Include="..\LmpClient\LmpClient.csproj">
+      <Private>false</Private>
+      <ExcludeAssets>runtime</ExcludeAssets>
+    </ProjectReference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Same reference set LmpClient itself uses: the KSP stock assemblies, Harmony and
+         the LMP binaries. Private="false" because all of them are already present in
+         the KSP install and must not be duplicated into the plugin folder. -->
+    <Reference Include="Assembly-CSharp">
+      <HintPath>..\External\KSPLibraries\Assembly-CSharp.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Assembly-CSharp-firstpass">
+      <HintPath>..\External\KSPLibraries\Assembly-CSharp-firstpass.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine">
+      <HintPath>..\External\KSPLibraries\UnityEngine.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.CoreModule">
+      <HintPath>..\External\KSPLibraries\UnityEngine.CoreModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="0Harmony">
+      <HintPath>..\External\Dependencies\Harmony\000_Harmony\0Harmony.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+
+    <!-- LMP's own dependencies. Declared explicitly with Private=false so they are
+         referenced for compile time without ending up in the plugin's output, where a
+         stale second copy could disagree with the one LMP is already running. -->
+    <Reference Include="LmpCommon">
+      <HintPath>..\LmpCommon\bin\$(Configuration)\net472\LmpCommon.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="LmpGlobal">
+      <HintPath>..\LmpGlobal\bin\$(Configuration)\net472\LmpGlobal.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Lidgren.Network">
+      <HintPath>..\Lidgren.Net\bin\$(Configuration)\net472\Lidgren.Network.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+  <Target Name="DeployToKspClientPlugins" AfterTargets="Build" Condition="'$(KSPPATH)' != ''">
+    <PropertyGroup>
+      <ClientPluginDir>$(KSPPATH)\GameData\LunaMultiplayer\ClientPlugins</ClientPluginDir>
+    </PropertyGroup>
+    <MakeDir Directories="$(ClientPluginDir)" />
+    <Copy SourceFiles="$(OutputPath)$(AssemblyName).dll" DestinationFolder="$(ClientPluginDir)" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="$(OutputPath)$(AssemblyName).pdb" DestinationFolder="$(ClientPluginDir)" SkipUnchangedFiles="true"
+          Condition="Exists('$(OutputPath)$(AssemblyName).pdb')" />
+  </Target>
+
+</Project>

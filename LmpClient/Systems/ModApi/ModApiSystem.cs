@@ -22,10 +22,11 @@ namespace LmpClient.Systems.ModApi
         /// </summary>
         /// <param name="modName">Mod Name</param>
         /// <param name="messageData">The message payload</param>
-        /// <param name="relay">If set to <c>true</c>, The server will relay the Message to all other authenticated clients</param>
-        public void SendModMessage(string modName, byte[] messageData, bool relay)
+        /// <param name="relay">If set to <c>true</c>, the server relays the Message to all other authenticated clients</param>
+        /// <param name="reliable">Defaults to <c>true</c>; false sends UnreliableSequenced and may drop silently.</param>
+        public void SendModMessage(string modName, byte[] messageData, bool relay, bool reliable = true)
         {
-            SendModMessage(modName, messageData, messageData.Length, relay);
+            SendModMessage(modName, messageData, messageData.Length, relay, reliable);
         }
 
         /// <summary>
@@ -34,14 +35,21 @@ namespace LmpClient.Systems.ModApi
         /// <param name="modName">Mod Name</param>
         /// <param name="messageData">The message payload</param>
         /// <param name="numBytes">Number of bytes to take from the array</param>
-        /// <param name="relay">If set to <c>true</c>, The server will relay the Message to all other authenticated clients</param>
-        public void SendModMessage(string modName, byte[] messageData, int numBytes, bool relay)
+        /// <param name="relay">If set to <c>true</c>, the server relays the Message to all other authenticated clients</param>
+        /// <param name="reliable">See the overload above.</param>
+        public void SendModMessage(string modName, byte[] messageData, int numBytes, bool relay, bool reliable = true)
         {
             if (modName == null)
                 return;
             if (messageData == null)
             {
                 LunaLog.LogError($"[LMP]: {modName} attemped to send a null Message");
+                return;
+            }
+
+            if (numBytes < 0 || numBytes > messageData.Length)
+            {
+                LunaLog.LogError($"[LMP]: {modName} attemped to send {numBytes} bytes from a {messageData.Length} byte array");
                 return;
             }
 
@@ -54,6 +62,7 @@ namespace LmpClient.Systems.ModApi
 
             msgData.NumBytes = numBytes;
             msgData.Relay = relay;
+            msgData.Reliable = reliable;
             msgData.ModName = modName;
 
             MessageSender.SendMessage(msgData);

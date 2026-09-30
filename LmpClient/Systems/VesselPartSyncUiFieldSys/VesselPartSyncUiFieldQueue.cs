@@ -30,7 +30,10 @@ namespace LmpClient.Systems.VesselPartSyncUiFieldSys
                     value.FloatValue = msgData.FloatValue;
                     break;
                 default:
-                    throw new ArgumentOutOfRangeException();
+                    //This message type only carries bool/int/float; throwing would disconnect the player.
+                    LunaLog.LogError($"[LMP] Unsupported UI part sync field type {value.FieldType} for '{value.ModuleName}.{value.FieldName}' " +
+                                     $"(vessel {value.VesselId}, part {value.PartFlightId}). Field dropped.");
+                    break;
             }
         }
     }

@@ -261,6 +261,9 @@
     <Compile Include="ModuleStore\Patching\FieldChangeTranspiler.cs" />
     <Compile Include="ModuleStore\Patching\PartModuleRunner.cs" />
     <Compile Include="ModuleStore\Patching\PartModulePatcher.cs" />
+    <Compile Include="ClientPlugins\ILmpClientPlugin.cs" />
+    <Compile Include="ClientPlugins\ILmpClientPluginContext.cs" />
+    <Compile Include="ClientPlugins\LmpClientPluginHandler.cs" />
     <Compile Include="ModuleStore\Patching\TestModule.cs" />
     <Compile Include="ModuleStore\Structures\FieldDefinition.cs" />
     <Compile Include="ModuleStore\Structures\MethodDefinition.cs" />

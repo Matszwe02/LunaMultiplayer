@@ -39,15 +39,47 @@ namespace LmpClient.ModuleStore
         {
             var moduleValues = new List<ModuleDefinition>();
 
-            foreach (var file in Directory.GetFiles(CustomPartSyncFolder, "*.xml", SearchOption.AllDirectories))
+            //Called from MainSystem.Awake() with no try above it, so throwing here aborts LMP
+            //startup entirely - no base events, no Harmony patches, no network. A third-party mod
+            //shipping a malformed definition must never be able to do that, so this degrades.
+            if (!Directory.Exists(CustomPartSyncFolder))
             {
-                var moduleDefinition = LunaXmlSerializer.ReadXmlFromPath<ModuleDefinition>(file);
-                moduleDefinition.ModuleName = Path.GetFileNameWithoutExtension(file);
-
-                moduleValues.Add(moduleDefinition);
+                LunaLog.LogWarning($"[LMP] No part sync folder at '{CustomPartSyncFolder}'. " +
+                                   $"Part module field sync is limited to the always-loaded built-in definitions.");
+                CustomizedModuleBehaviours = new Dictionary<string, ModuleDefinition>();
+                return;
             }
 
-            CustomizedModuleBehaviours = moduleValues.ToDictionary(m => m.ModuleName, v => v);
+            var skippedFiles = new List<string>();
+            foreach (var file in Directory.GetFiles(CustomPartSyncFolder, "*.xml", SearchOption.AllDirectories))
+            {
+                try
+                {
+                    var moduleDefinition = LunaXmlSerializer.ReadXmlFromPath<ModuleDefinition>(file);
+                    moduleDefinition.ModuleName = Path.GetFileNameWithoutExtension(file);
+
+                    moduleValues.Add(moduleDefinition);
+                }
+                catch (Exception e)
+                {
+                    LunaLog.LogError($"[LMP] Could not read part sync definition '{file}', skipping it: {e.Message}");
+                    skippedFiles.Add(Path.GetFileName(file));
+                }
+            }
+
+            //Two mods can ship the same file name. First wins: ToDictionary threw on the duplicate
+            //and took the whole client down with it.
+            var duplicates = moduleValues.GroupBy(m => m.ModuleName).Where(g => g.Count() > 1).ToList();
+            foreach (var duplicate in duplicates)
+            {
+                LunaLog.LogWarning($"[LMP] {duplicate.Count()} part sync definitions are named '{duplicate.Key}'. " +
+                                   $"They target part modules by class name, so only the first can ever apply. " +
+                                   $"Rename the extras; ignoring: {string.Join(", ", duplicate.Skip(1).Select(m => m.ModuleName))}");
+            }
+
+            CustomizedModuleBehaviours = moduleValues
+                .GroupBy(m => m.ModuleName)
+                .ToDictionary(g => g.Key, g => g.First());
 
             var newChildModulesToAdd = new List<ModuleDefinition>();
             foreach (var value in CustomizedModuleBehaviours.Values)
@@ -68,6 +100,17 @@ namespace LmpClient.ModuleStore
 
             foreach (var module in CustomizedModuleBehaviours.Values)
                 module.Init();
+
+            //Without a summary, a definition that resolves to nothing looks exactly like one
+            //that is working.
+            var resolvedModules = CustomizedModuleBehaviours.Values.Count(v => PartModuleTypes.Any(t => t.Name == v.ModuleName));
+            var totalFields = CustomizedModuleBehaviours.Values.Sum(v => v.CustomizedFields.Count);
+            var totalMethods = CustomizedModuleBehaviours.Values.Sum(v => v.CustomizedMethods.Count);
+
+            LunaLog.Log($"[LMP] Part sync definitions: {CustomizedModuleBehaviours.Count} loaded, " +
+                        $"{resolvedModules} matched an installed part module, " +
+                        $"{totalFields} field(s), {totalMethods} method(s)" +
+                        (skippedFiles.Count > 0 ? $", {skippedFiles.Count} file(s) skipped ({string.Join(", ", skippedFiles)})" : string.Empty));
         }
 
         /// <summary>
