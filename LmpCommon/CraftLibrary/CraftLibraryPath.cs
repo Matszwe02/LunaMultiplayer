@@ -14,6 +14,7 @@ namespace LmpCommon.CraftLibrary
     public static class CraftLibraryPath
     {
         public const int MaxCraftFolderLength = 200;
+        public const string TransientCraftName = "Auto-Saved Ship";
 
         private static readonly char[] InvalidFileNameChars =
             { '"', '<', '>', '|', ':', '*', '?', '\\', '/', '\0', (char)127 };
@@ -30,6 +31,11 @@ namespace LmpCommon.CraftLibrary
         public static bool CraftNameIsValid(string craftName)
         {
             return !string.IsNullOrWhiteSpace(craftName) && IsValidSegment(craftName);
+        }
+
+        public static bool IsTransientCraftName(string craftName)
+        {
+            return string.Equals(craftName, TransientCraftName, StringComparison.OrdinalIgnoreCase);
         }
 
         public static bool CraftNameIsValid(string craftName, out string reason)

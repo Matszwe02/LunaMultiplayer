@@ -54,6 +54,9 @@ namespace Server.System
                 return;
             }
 
+            if (CraftLibraryPath.IsTransientCraftName(craft.CraftName))
+                return;
+
             if (!CraftLibraryPath.CraftFolderIsValid(craft.CraftFolder, out invalidReason))
             {
                 LunaLog.Warning($"{client.PlayerName} tried to save a craft in an invalid subfolder ({craft.CraftFolder}): {invalidReason}");
@@ -198,9 +201,13 @@ namespace Server.System
 
                     foreach (var file in Directory.GetFiles(craftTypeFolder, "*.craft", SearchOption.AllDirectories))
                     {
+                        var craftName = Path.GetFileNameWithoutExtension(file);
+
+                        if (CraftLibraryPath.IsTransientCraftName(craftName)) continue;
+
                         if (SendCraftFile(client, folderName,
                                 CraftLibraryPath.GetCraftFolderFromPath(file.Substring(craftTypeFolder.Length + 1)),
-                                Path.GetFileNameWithoutExtension(file), craftType, file))
+                                craftName, craftType, file))
                             craftCount++;
                     }
                 }

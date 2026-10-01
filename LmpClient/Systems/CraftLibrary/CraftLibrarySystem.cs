@@ -41,10 +41,10 @@ namespace LmpClient.Systems.CraftLibrary
 
         private readonly ConcurrentQueue<CraftEntry> _uploadQueue = new ConcurrentQueue<CraftEntry>();
         private readonly ConcurrentQueue<CraftEntry> _deleteQueue = new ConcurrentQueue<CraftEntry>();
-        private readonly ConcurrentQueue<string> _downloadedCraftsNotification = new ConcurrentQueue<string>();
-        private readonly ConcurrentQueue<string> _uploadedCraftsNotification = new ConcurrentQueue<string>();
+        private readonly ConcurrentQueue<string> _craftNotifications = new ConcurrentQueue<string>();
         private readonly ConcurrentQueue<string> _deletedCraftsNotification = new ConcurrentQueue<string>();
         private readonly ConcurrentQueue<string> _warnings = new ConcurrentQueue<string>();
+        private int _craftsReceived;
 
         /// <summary>Content of the craft files we last wrote or uploaded, to know what the server has</summary>
         private readonly ConcurrentDictionary<string, byte[]> _lastLocalContent
@@ -117,12 +117,12 @@ namespace LmpClient.Systems.CraftLibrary
 
             while (_uploadQueue.TryDequeue(out _)) { }
             while (_deleteQueue.TryDequeue(out _)) { }
-            while (_downloadedCraftsNotification.TryDequeue(out _)) { }
-            while (_uploadedCraftsNotification.TryDequeue(out _)) { }
+            while (_craftNotifications.TryDequeue(out _)) { }
             while (_deletedCraftsNotification.TryDequeue(out _)) { }
             while (_warnings.TryDequeue(out _)) { }
             _lastLocalContent.Clear();
             _ownCraftFiles.Clear();
+            Interlocked.Exchange(ref _craftsReceived, 0);
             _librarySyncRequested = false;
             _librarySynced = false;
             _syncRequestTimeUtc = DateTime.MinValue;
@@ -144,6 +144,8 @@ namespace LmpClient.Systems.CraftLibrary
         public void StoreCraft(CraftEntry craft)
         {
             if (!Enabled || !IsValidLibraryCraft(craft))
+                return;
+            if (CraftLibraryPath.IsTransientCraftName(craft.CraftName))
                 return;
 
             var ownCraft = IsOwnCraft(craft.FolderName);
@@ -199,7 +201,7 @@ namespace LmpClient.Systems.CraftLibrary
                 if (_syncInProgress)
                     _libraryCraftsReceived++;
                 else
-                    _downloadedCraftsNotification.Enqueue($"{craft.FolderName}/{craft.CraftName}");
+                    Interlocked.Increment(ref _craftsReceived);
             }
             finally
             {
@@ -298,6 +300,7 @@ namespace LmpClient.Systems.CraftLibrary
                         EnforceRootLayout();
                         ScanAndQueueOwnCraftChanges();
                         CheckLibrarySyncTimeout();
+                        AnnouncePendingUploads();
                         DrainQueues();
                         RequestLibrarySyncIfNeeded();
                     }
@@ -356,19 +359,15 @@ namespace LmpClient.Systems.CraftLibrary
                     var craftName = Path.GetFileNameWithoutExtension(file);
                     var targetPath = CommonUtil.CombinePaths(playerFolder, $"{craftName}.craft");
 
+                    if (CraftLibraryPath.IsTransientCraftName(craftName))
+                        continue;
+
                     try
                     {
                         Directory.CreateDirectory(playerFolder);
 
-                        //The root craft is the newest save, so it replaces the catalogued one. Copy before
-                        //deleting, so a failed write cannot destroy the craft the others have
-                        if (File.Exists(targetPath))
-                            WarnOnce(targetPath, LocalizationContainer.ScreenText.CraftOutsideFolderWarning);
-
                         File.Copy(file, targetPath, true);
                         File.Delete(file);
-
-                        //Move the sidecar too, so no stale metadata is left behind
                         MoveSidecar(file, targetPath);
 
                         LunaLog.Log($"[LMP]: Catalogued craft {craftName} in the {playerName} folder");
@@ -435,7 +434,7 @@ namespace LmpClient.Systems.CraftLibrary
                     try
                     {
                         Directory.Delete(dir, true);
-                        WarnOnce(dir, LocalizationContainer.ScreenText.CraftFolderPermissionDenied);
+                        WarnOnce(dir, LocalizationContainer.ScreenText.CraftOutsideFolderWarning);
                         LunaLog.Log($"[LMP]: Removed craft folder '{dir}' as crafts may only be saved inside the player folder");
                     }
                     catch (Exception ex)
@@ -496,13 +495,16 @@ namespace LmpClient.Systems.CraftLibrary
                 {
                     seenCrafts.Add(file);
 
+                    if (CraftLibraryPath.IsTransientCraftName(Path.GetFileNameWithoutExtension(file)))
+                        continue;
+
                     var craft = LibraryCraftFromPath(playerName, craftType, playerFolder, file);
                     var info = new FileInfo(file);
 
                     //A craft the server would reject would be queued on every scan forever
                     if (!IsValidLibraryCraft(craft))
                     {
-                        WarnOnce(file, LocalizationContainer.ScreenText.CraftOutsideFolderWarning);
+                        WarnOnce(file, string.Format(LocalizationContainer.ScreenText.CraftNotShared, InvalidCraftReason(craft)));
                         continue;
                     }
 
@@ -562,14 +564,26 @@ namespace LmpClient.Systems.CraftLibrary
         /// <summary>Sends the queued uploads and deletions, in order, before the sync request</summary>
         private void DrainQueues()
         {
+            var uploaded = 0;
             while (_uploadQueue.TryDequeue(out var craft))
             {
                 MessageSender.SendCraftMsg(craft);
-                _uploadedCraftsNotification.Enqueue(craft.CraftName);
+                uploaded++;
             }
+
+            if (uploaded > 0)
+                _craftNotifications.Enqueue(string.Format(LocalizationContainer.ScreenText.CraftsUploaded, uploaded));
 
             while (_deleteQueue.TryDequeue(out var craft))
                 MessageSender.SendCraftDeleteMsg(craft);
+        }
+
+        private void AnnouncePendingUploads()
+        {
+            var pending = _uploadQueue.Count;
+            if (pending <= 0) return;
+
+            _craftNotifications.Enqueue(string.Format(LocalizationContainer.ScreenText.CraftsUploading, pending));
         }
 
         /// <summary>Asks for the whole library once all our local changes were sent, and waits for its marker</summary>
@@ -672,13 +686,16 @@ namespace LmpClient.Systems.CraftLibrary
 
                 foreach (var file in CraftFiles(playerFolder))
                 {
+                    if (CraftLibraryPath.IsTransientCraftName(Path.GetFileNameWithoutExtension(file)))
+                        continue;
+
                     var craft = LibraryCraftFromPath(playerName, craftType, playerFolder, file);
                     var content = ReadCraft(file);
 
                     //A craft the server would reject, or it would be retried on every pass
                     if (!IsValidLibraryCraft(craft))
                     {
-                        WarnOnce(file, LocalizationContainer.ScreenText.CraftOutsideFolderWarning);
+                        WarnOnce(file, string.Format(LocalizationContainer.ScreenText.CraftNotShared, InvalidCraftReason(craft)));
                         continue;
                     }
 
@@ -760,13 +777,15 @@ namespace LmpClient.Systems.CraftLibrary
             //Only shown in the KSC and the editors, the sync itself runs in every scene
             var showNotifications = HighLogic.LoadedScene == GameScenes.SPACECENTER || HighLogic.LoadedSceneIsEditor;
 
-            while (_downloadedCraftsNotification.TryDequeue(out var craftName))
+            while (_craftNotifications.TryDequeue(out var notification))
                 if (showNotifications)
-                    LunaScreenMsg.PostScreenMessage($"({craftName}) {LocalizationContainer.ScreenText.CraftSaved}", 5f, ScreenMessageStyle.UPPER_CENTER);
+                    LunaScreenMsg.PostScreenMessage(notification, 5f, ScreenMessageStyle.UPPER_CENTER);
 
-            while (_uploadedCraftsNotification.TryDequeue(out var uploadedCraft))
-                if (showNotifications)
-                    LunaScreenMsg.PostScreenMessage($"({uploadedCraft}) {LocalizationContainer.ScreenText.CraftUploaded}", 5f, ScreenMessageStyle.UPPER_CENTER);
+            //Everything that arrived since the last message, so a whole transfer is one line
+            var received = Interlocked.Exchange(ref _craftsReceived, 0);
+            if (received > 0 && showNotifications)
+                LunaScreenMsg.PostScreenMessage(string.Format(LocalizationContainer.ScreenText.CraftsReceived, received),
+                    5f, ScreenMessageStyle.UPPER_CENTER);
 
             while (_deletedCraftsNotification.TryDequeue(out var deletedCraft))
                 if (showNotifications)
@@ -865,6 +884,14 @@ namespace LmpClient.Systems.CraftLibrary
                    && CraftLibraryPath.CraftFolderIsValid(craft.CraftFolder)
                    && CraftLibraryPath.IsValidCraftType(craft.CraftType)
                    && CraftLibraryPath.PlayerFolderIsValid(craft.FolderName);
+        }
+
+        private static string InvalidCraftReason(LibraryCraft craft)
+        {
+            if (!CraftLibraryPath.CraftNameIsValid(craft.CraftName, out var reason)) return reason;
+            if (!CraftLibraryPath.CraftFolderIsValid(craft.CraftFolder, out reason)) return reason;
+
+            return "unknown craft type";
         }
 
         private static byte[] ReadCraft(string path)

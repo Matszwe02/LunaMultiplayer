@@ -4,10 +4,14 @@
     {
         public string CraftUploaded { get; set; } = "Craft uploaded!";
         public string CraftSaved { get; set; } = "Craft saved!";
+        public string CraftsUploading { get; set; } = "Uploading {0} crafts";
+        public string CraftsUploaded { get; set; } = "Uploaded {0} crafts";
+        public string CraftsReceived { get; set; } = "Received {0} crafts";
         public string CraftDeleted { get; set; } = "Craft deleted!";
         public string CraftPermissionDenied { get; set; } = "You don't have permission to modify other people's crafts!";
         public string CraftFolderPermissionDenied { get; set; } = "You don't have permission to create folders outside your own craft folder!";
         public string CraftOutsideFolderWarning { get; set; } = "You can only save vehicles in your own craft folder! The vehicle was removed.";
+        public string CraftNotShared { get; set; } = "This vehicle cannot be shared: {0}.";
         public string CraftLibrarySynced { get; set; } = "Craft library synchronized, {0} crafts received";
         public string ModFileGenerated { get; set; } = "LMPModControl.xml file generated in your KSP folder";
         public string Disconected { get; set; } = "You have been disconnected!";
