@@ -32,6 +32,7 @@ namespace LmpClient.Systems.CraftLibrary
         #region Fields
 
         private const long CraftCheckIntervalMs = 1000;
+        private const int EditorRefreshIntervalMs = 2000;
 
         private static readonly TimeSpan LibrarySyncTimeout = TimeSpan.FromSeconds(60);
         private static readonly string SaveFolder = CommonUtil.CombinePaths(MainSystem.KspPath, "saves", "LunaMultiplayer");
@@ -109,6 +110,7 @@ namespace LmpClient.Systems.CraftLibrary
 
             SetupRoutine(new RoutineDefinition((int)CraftCheckIntervalMs, RoutineExecution.Update, ProcessCraftFolderChanges));
             SetupRoutine(new RoutineDefinition(1000, RoutineExecution.Update, NotifyCraftChanges));
+            SetupRoutine(new RoutineDefinition(EditorRefreshIntervalMs, RoutineExecution.Update, RefreshEditor));
         }
 
         protected override void OnDisabled()
@@ -120,6 +122,7 @@ namespace LmpClient.Systems.CraftLibrary
             while (_craftNotifications.TryDequeue(out _)) { }
             while (_deletedCraftsNotification.TryDequeue(out _)) { }
             while (_warnings.TryDequeue(out _)) { }
+            CraftLibraryEditorRefresh.ClearPending();
             _lastLocalContent.Clear();
             _ownCraftFiles.Clear();
             Interlocked.Exchange(ref _craftsReceived, 0);
@@ -180,8 +183,10 @@ namespace LmpClient.Systems.CraftLibrary
                     if (ownCraft) return;
                 }
 
+                var folderExisted = Directory.Exists(directory);
                 Directory.CreateDirectory(directory);
                 WriteCraft(path, content, craft.CraftNumBytes);
+                CraftLibraryEditorRefresh.QueueRefresh(craft.CraftType, !folderExisted);
 
                 if (ownCraft)
                 {
@@ -239,6 +244,7 @@ namespace LmpClient.Systems.CraftLibrary
 
                 //A folder deletion has to propagate
                 CraftLibraryPath.PruneEmptyDirectoriesUpTo(directory, GetRootFolder(craft.CraftType));
+                CraftLibraryEditorRefresh.QueueRefresh(craft.CraftType, !Directory.Exists(directory));
                 _knownPlayerFolders.Add(craft.FolderName);
                 _deletedCraftsNotification.Enqueue($"{craft.FolderName}/{craft.CraftName}");
             }
@@ -353,6 +359,7 @@ namespace LmpClient.Systems.CraftLibrary
             {
                 var rootFolder = GetRootFolder(craftType);
                 var playerFolder = GetPlayerFolder(playerName, craftType);
+                var playerFolderExisted = Directory.Exists(playerFolder);
 
                 foreach (var file in CraftFiles(rootFolder, false))
                 {
@@ -365,7 +372,6 @@ namespace LmpClient.Systems.CraftLibrary
                     try
                     {
                         Directory.CreateDirectory(playerFolder);
-
                         File.Copy(file, targetPath, true);
                         File.Delete(file);
                         MoveSidecar(file, targetPath);
@@ -376,6 +382,8 @@ namespace LmpClient.Systems.CraftLibrary
                     {
                         LunaLog.LogError($"[LMP]: Error moving craft {file} into the player folder: {ex.Message}");
                     }
+
+                    CraftLibraryEditorRefresh.QueueRefresh(craftType, !playerFolderExisted);
                 }
             }
         }
@@ -434,6 +442,7 @@ namespace LmpClient.Systems.CraftLibrary
                     try
                     {
                         Directory.Delete(dir, true);
+                        CraftLibraryEditorRefresh.QueueRefresh(craftType, true);
                         WarnOnce(dir, LocalizationContainer.ScreenText.CraftOutsideFolderWarning);
                         LunaLog.Log($"[LMP]: Removed craft folder '{dir}' as crafts may only be saved inside the player folder");
                     }
@@ -452,6 +461,7 @@ namespace LmpClient.Systems.CraftLibrary
 
                     File.Delete(file);
                     TryDeleteSidecar(file);
+                    CraftLibraryEditorRefresh.QueueRefresh(craftType, false);
                     WarnOnce(file, LocalizationContainer.ScreenText.CraftOutsideFolderWarning);
                 }
             }
@@ -641,6 +651,7 @@ namespace LmpClient.Systems.CraftLibrary
                         File.Delete(restoredPath);
                         TryDeleteSidecar(restoredPath);
                         CraftLibraryPath.PruneEmptyDirectoriesUpTo(directory, GetRootFolder(craft.CraftType));
+                        CraftLibraryEditorRefresh.QueueRefresh(craft.CraftType, !Directory.Exists(directory));
                         ForgetCraftFile(restoredPath);
                     }
 
@@ -665,6 +676,7 @@ namespace LmpClient.Systems.CraftLibrary
                     if (!libraryPlayers.Contains(folderName))
                     {
                         RemoveStaleCraftFolder(dir, rootFolder);
+                        CraftLibraryEditorRefresh.QueueRefresh(craftType, true);
                         continue;
                     }
 
@@ -676,6 +688,7 @@ namespace LmpClient.Systems.CraftLibrary
                         File.Delete(file);
                         TryDeleteSidecar(file);
                         CraftLibraryPath.PruneEmptyDirectoriesUpTo(Path.GetDirectoryName(file), rootFolder);
+                        CraftLibraryEditorRefresh.QueueRefresh(craftType, !Directory.Exists(Path.GetDirectoryName(file)));
                         ForgetCraftFile(file);
                         LunaLog.Log($"[LMP]: Removed stale craft '{file}' as the server doesn't have it");
                     }
@@ -795,6 +808,11 @@ namespace LmpClient.Systems.CraftLibrary
                 LunaScreenMsg.PostScreenMessage(warning, 6f, ScreenMessageStyle.UPPER_CENTER);
         }
 
+        private void RefreshEditor()
+        {
+            CraftLibraryEditorRefresh.FlushPending();
+        }
+
         /// <summary>Shows a warning on the screen once per path, naming the craft</summary>
         private void WarnOnce(string path, string warning)
         {
@@ -901,6 +919,8 @@ namespace LmpClient.Systems.CraftLibrary
 
         private static void WriteCraft(string path, byte[] data, int length)
         {
+            TryDeleteSidecar(path);
+
             //The buffer comes from a message pool and can be longer than the craft
             using (var stream = File.Create(path))
                 stream.Write(data, 0, length);
