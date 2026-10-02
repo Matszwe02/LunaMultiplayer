@@ -56,8 +56,7 @@ namespace LmpClient.Systems.TimeSync
         #region Constants
 
         /// <summary>
-        /// If the time between UTC and game is greater than this, the game speed will be warped (makes game go faster/slower)
-        /// to catch up with the target time
+        /// If the time between UTC and game is greater than this, the game time will be fixed using the phisics clock (makes game go faster/slower)
         /// </summary>
         private const int MinPhysicsClockMsError = 25;
         /// <summary>
@@ -69,14 +68,11 @@ namespace LmpClient.Systems.TimeSync
         /// </summary>
         private const float MaxPhysicsClockRate = 1.20f;
         /// <summary>
-        /// Limit at which we won't fix the time with the GAME timescale anymore, as catching up would take too long.
-        /// With the current limits catching up 30 seconds of error takes around 2.5 minutes.
-        /// Above this limit we jump to the target time as a last resort (this resets the physics!)
+        /// Limit at which we won't fix the time with the GAME timescale
         /// </summary>
-        private const int MaxPhysicsClockMsError = 30000;
+        private const int MaxPhysicsClockMsError = 5000;
         /// <summary>
-        /// Maximum change of the game speed on every fixed update. This eases the clock skewing in and out smoothly,
-        /// as a sudden change of the game speed makes the physics shake
+        /// Maximum change of the game speed on every fixed update
         /// </summary>
         private const float MaxTimeScaleChangePerFixedUpdate = 0.01f;
 
@@ -204,28 +200,15 @@ namespace LmpClient.Systems.TimeSync
         #region Public methods
 
         /// <summary>
-        /// Forces a time sync against the server time. For normal errors the sync is eased in by warping the game speed,
-        /// only for huge errors we jump to the target time
+        /// Forces a time sync against the server time
         /// </summary>
         public void ForceTimeSync()
         {
             if (Enabled && !CurrentlyWarping && CanSyncTime && !WarpSystem.Singleton.WaitingSubspaceIdFromServer)
             {
                 var targetTime = WarpSystem.Singleton.CurrentSubspaceTime;
-                var currentError = TimeUtil.SecondsToMilliseconds(CurrentErrorSec);
-
-                if (Math.Abs(currentError) < MaxPhysicsClockMsError)
-                {
-                    LunaLog.LogWarning($"Forcing a smooth time sync from: {UniversalTime} to: {targetTime}. Error: {currentError}ms. " +
-                                       "The game speed will be warped to catch up");
-                    //SkewClock() will ease the game speed towards the target rate on the next fixed updates
-                }
-                else
-                {
-                    LunaLog.LogWarning($"FORCING a time sync from: {UniversalTime} to: {targetTime}. Error: {currentError}");
-                    SetGameTime(targetTime);
-                    Time.timeScale = 1;
-                }
+                LunaLog.LogWarning($"FORCING a time sync from: {UniversalTime} to: {targetTime}. Error: {TimeUtil.SecondsToMilliseconds(CurrentErrorSec)}");
+                SetGameTime(targetTime);
             }
         }
 
@@ -262,25 +245,21 @@ namespace LmpClient.Systems.TimeSync
         #region Private methods
 
         /// <summary>
-        /// Here we adjust the GAME timescale and make the game go faster or slower to catch up with the target time.
-        /// The game speed changes are eased in gradually so the physics is never shaken or reset
+        /// Here we adjust the GAME timescale and make the game go faster or slower
         /// </summary>
         private static void SkewClock(double currentErrorMs)
         {
             float targetRate;
             if (Math.Abs(currentErrorMs) < MinPhysicsClockMsError)
             {
-                //Error is within the tolerance so ease the game speed back to normal
                 targetRate = 1f;
             }
             else
             {
-                //Run faster if we are behind the target time and slower if we are ahead of it
                 targetRate = Mathf.Clamp((float)Math.Pow(2, -TimeUtil.MillisecondsToSeconds(currentErrorMs)), MinPhysicsClockRate, MaxPhysicsClockRate);
             }
 
-            //Ease the game speed towards the target rate: an instant change of the time scale makes the physics shake
-            Time.timeScale = Mathf.MoveTowards(Time.timeScale, targetRate, MaxTimeScaleChangePerFixedUpdate);
+            Time.timeScale = Mathf.MoveTowards(Time.timeScale, targetRate, MaxTimeScaleChangePerFixedUpdate / 2);
         }
 
         /// <summary>
