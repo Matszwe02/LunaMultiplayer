@@ -16,16 +16,10 @@ using System.Threading.Tasks;
 namespace LmpClient.Systems.CraftLibrary
 {
     /// <summary>
-    /// Keeps the craft library of every player in sync, without any user interaction.
-    /// Every player has a subfolder in the LMP save ("Ships/VAB/playerName", "Ships/SPH/playerName" and
-    /// "Subassemblies/playerName") that KSP shows as a subdirectory of the stock craft dialogs. A craft
-    /// saved there, in a subfolder of it or in the root of the ships folder, is uploaded to the server,
-    /// which stores it and relays it to every client.
-    /// After connecting the client asks for the whole library. Once the server finished sending it, the
-    /// local list is mirrored: crafts and folders the server doesn't have are removed, the crafts it is
-    /// missing are uploaded, a craft it has that was missing on disk was deleted offline so its deletion
-    /// is sent, and a craft it has an older version of is uploaded again. A vehicle saved where it cannot
-    /// be synced is removed again right away. See <see cref="CraftLibraryPath" /> for the name and path rules.
+    /// Keeps the craft library of every player in sync, without any user interaction. Ours lives in a folder
+    /// of its own, "playerName (me)", which the server never sees: it stores every player under his plain name,
+    /// so a player name may never end with "(me)" or his folder would look like ours. See
+    /// <see cref="CraftLibraryPath" /> and <see cref="CraftLibraryOwnFolder" /> for the name and path rules.
     /// </summary>
     public class CraftLibrarySystem : MessageSystem<CraftLibrarySystem, CraftLibraryMessageSender, CraftLibraryMessageHandler>
     {
@@ -151,8 +145,9 @@ namespace LmpClient.Systems.CraftLibrary
             if (CraftLibraryPath.IsTransientCraftName(craft.CraftName))
                 return;
 
-            var ownCraft = IsOwnCraft(craft.FolderName);
-            var directory = GetCraftDirectory(craft.FolderName, craft.CraftType, craft.CraftFolder);
+            var localFolderName = LocalFolderNameOf(craft.FolderName);
+            var ownCraft = IsOwnFolder(localFolderName);
+            var directory = GetCraftDirectory(localFolderName, craft.CraftType, craft.CraftFolder);
             if (directory == null)
             {
                 LunaLog.LogError($"[LMP]: Ignoring craft {craft.FolderName}/{craft.CraftName}, it has an invalid subfolder ({craft.CraftFolder})");
@@ -165,7 +160,7 @@ namespace LmpClient.Systems.CraftLibrary
             CraftIoSemaphore.Wait();
             try
             {
-                _knownPlayerFolders.Add(craft.FolderName);
+                _knownPlayerFolders.Add(localFolderName);
 
                 if (_syncInProgress)
                     _serverLibrary.Add(new LibraryCraft(craft.FolderName, craft.CraftType, craft.CraftFolder, craft.CraftName));
@@ -220,8 +215,9 @@ namespace LmpClient.Systems.CraftLibrary
             if (!Enabled || !IsValidLibraryCraft(craft))
                 return;
 
-            var ownCraft = IsOwnCraft(craft.FolderName);
-            var directory = GetCraftDirectory(craft.FolderName, craft.CraftType, craft.CraftFolder);
+            var localFolderName = LocalFolderNameOf(craft.FolderName);
+            var ownCraft = IsOwnFolder(localFolderName);
+            var directory = GetCraftDirectory(localFolderName, craft.CraftType, craft.CraftFolder);
             if (directory == null)
                 return;
 
@@ -245,7 +241,7 @@ namespace LmpClient.Systems.CraftLibrary
                 //A folder deletion has to propagate
                 CraftLibraryPath.PruneEmptyDirectoriesUpTo(directory, GetRootFolder(craft.CraftType));
                 CraftLibraryEditorRefresh.QueueRefresh(craft.CraftType, !Directory.Exists(directory));
-                _knownPlayerFolders.Add(craft.FolderName);
+                _knownPlayerFolders.Add(localFolderName);
                 _deletedCraftsNotification.Enqueue($"{craft.FolderName}/{craft.CraftName}");
             }
             finally
@@ -300,6 +296,7 @@ namespace LmpClient.Systems.CraftLibrary
                         if (Interlocked.Exchange(ref _resetSessionRequested, 0) == 1)
                             ResetSessionState();
 
+                        RenameOwnFolder();
                         CaptureRootLayoutIfNeeded();
                         MoveRootCraftsIntoPlayerFolder();
                         CaptureOwnCraftsIfNeeded();
@@ -327,13 +324,52 @@ namespace LmpClient.Systems.CraftLibrary
         }
 
         /// <summary>
+        /// Renames our own folder to the one of the player name we are connected with, so a player who renamed
+        /// himself keeps his crafts. A folder ending in "(me)" is ours, and a folder named like the player is
+        /// the own folder of every LMP before the suffix existed
+        /// </summary>
+        private void RenameOwnFolder()
+        {
+            var playerName = OwnPlayerName();
+            var ownFolderName = OwnFolderName();
+            if (playerName == null) return;
+
+            foreach (var craftType in CraftLibraryPath.AllTypes)
+            {
+                var rootFolder = GetRootFolder(craftType);
+
+                foreach (var dir in SubFolders(rootFolder))
+                {
+                    var folderName = new DirectoryInfo(dir).Name;
+                    if (string.Equals(folderName, ownFolderName, StringComparison.OrdinalIgnoreCase))
+                        continue;
+
+                    if (!IsOwnFolder(folderName) && !string.Equals(folderName, playerName, StringComparison.OrdinalIgnoreCase))
+                        continue;
+
+                    var target = CommonUtil.CombinePaths(rootFolder, ownFolderName);
+
+                    //Both folders are ours when we renamed back and forth, the one we are using stays
+                    if (Directory.Exists(target))
+                    {
+                        LunaLog.Log($"[LMP]: Kept the craft folder {folderName}, the folder {ownFolderName} is already there");
+                        continue;
+                    }
+
+                    Directory.Move(dir, target);
+                    CraftLibraryEditorRefresh.QueueRefresh(craftType, true);
+                    LunaLog.Log($"[LMP]: Renamed the craft folder {folderName} to {ownFolderName} as the player name changed");
+                }
+            }
+        }
+
+        /// <summary>
         /// Remembers the folders and crafts outside the player folders that existed when we connected, so
         /// only new violations are reverted while the library arrives
         /// </summary>
         private void CaptureRootLayoutIfNeeded()
         {
-            var playerName = OwnPlayerName();
-            if (_rootLayoutCaptured || playerName == null) return;
+            if (_rootLayoutCaptured || OwnFolderName() == null) return;
 
             _rootLayoutCaptured = true;
 
@@ -344,7 +380,7 @@ namespace LmpClient.Systems.CraftLibrary
                     _rootFoldersAtStart.Add(new DirectoryInfo(dir).Name);
 
                 foreach (var file in CraftFiles(rootFolder))
-                    if (IsOutsidePlayerFolders(file, playerName, rootFolder))
+                    if (IsOutsidePlayerFolders(file, rootFolder))
                         _preExistingOutsideFiles.Add(file);
             }
         }
@@ -352,22 +388,19 @@ namespace LmpClient.Systems.CraftLibrary
         /// <summary>Moves the crafts directly in the root of the ships folders into our own player folder</summary>
         private void MoveRootCraftsIntoPlayerFolder()
         {
-            var playerName = OwnPlayerName();
-            if (playerName == null) return;
+            var ownFolderName = OwnFolderName();
+            if (ownFolderName == null) return;
 
             foreach (var craftType in CraftLibraryPath.AllTypes)
             {
                 var rootFolder = GetRootFolder(craftType);
-                var playerFolder = GetPlayerFolder(playerName, craftType);
+                var playerFolder = GetPlayerFolder(ownFolderName, craftType);
                 var playerFolderExisted = Directory.Exists(playerFolder);
 
                 foreach (var file in CraftFiles(rootFolder, false))
                 {
                     var craftName = Path.GetFileNameWithoutExtension(file);
                     var targetPath = CommonUtil.CombinePaths(playerFolder, $"{craftName}.craft");
-
-                    if (CraftLibraryPath.IsTransientCraftName(craftName))
-                        continue;
 
                     try
                     {
@@ -376,7 +409,7 @@ namespace LmpClient.Systems.CraftLibrary
                         File.Delete(file);
                         MoveSidecar(file, targetPath);
 
-                        LunaLog.Log($"[LMP]: Catalogued craft {craftName} in the {playerName} folder");
+                        LunaLog.Log($"[LMP]: Catalogued craft {craftName} in the {ownFolderName} folder");
                     }
                     catch (Exception ex)
                     {
@@ -407,13 +440,14 @@ namespace LmpClient.Systems.CraftLibrary
         private void CaptureOwnCraftsIfNeeded()
         {
             var playerName = OwnPlayerName();
+            var ownFolderName = OwnFolderName();
             if (_ownCraftsCaptured || playerName == null) return;
 
             _ownCraftsCaptured = true;
 
             foreach (var craftType in CraftLibraryPath.AllTypes)
             {
-                var playerFolder = GetPlayerFolder(playerName, craftType);
+                var playerFolder = GetPlayerFolder(ownFolderName, craftType);
                 if (!Directory.Exists(playerFolder)) continue;
 
                 _ownFolderExisted.Add(craftType);
@@ -425,8 +459,7 @@ namespace LmpClient.Systems.CraftLibrary
         /// <summary>Removes the folders and vehicles that appeared outside the player folders</summary>
         private void EnforceRootLayout()
         {
-            var playerName = OwnPlayerName();
-            if (playerName == null) return;
+            if (OwnPlayerName() == null) return;
 
             foreach (var craftType in CraftLibraryPath.AllTypes)
             {
@@ -435,7 +468,7 @@ namespace LmpClient.Systems.CraftLibrary
                 foreach (var dir in SubFolders(rootFolder))
                 {
                     var folderName = new DirectoryInfo(dir).Name;
-                    if (IsOwnPlayer(folderName, playerName) || _rootFoldersAtStart.Contains(folderName)
+                    if (IsOwnFolder(folderName) || _rootFoldersAtStart.Contains(folderName)
                         || _knownPlayerFolders.Contains(folderName))
                         continue;
 
@@ -456,7 +489,7 @@ namespace LmpClient.Systems.CraftLibrary
                 foreach (var file in CraftFiles(rootFolder))
                 {
                     if (!IsNestedBelowRootFolder(file, rootFolder)) continue;
-                    if (!IsOutsidePlayerFolders(file, playerName, rootFolder)) continue;
+                    if (!IsOutsidePlayerFolders(file, rootFolder)) continue;
                     if (_preExistingOutsideFiles.Contains(file)) continue;
 
                     File.Delete(file);
@@ -478,7 +511,7 @@ namespace LmpClient.Systems.CraftLibrary
         /// True when a craft file is in neither our own folder nor the folder of a player we know (the root
         /// of the ships folder, or a folder that belongs to nobody)
         /// </summary>
-        private bool IsOutsidePlayerFolders(string file, string playerName, string rootFolder)
+        private bool IsOutsidePlayerFolders(string file, string rootFolder)
         {
             var relative = file.Substring(rootFolder.Length + 1);
             var separatorIndex = relative.IndexOf('\\');
@@ -486,20 +519,21 @@ namespace LmpClient.Systems.CraftLibrary
                 separatorIndex = relative.IndexOf('/');
 
             var topLevel = separatorIndex < 0 ? relative : relative.Substring(0, separatorIndex);
-            return !IsOwnPlayer(topLevel, playerName) && !_knownPlayerFolders.Contains(topLevel);
+            return !IsOwnFolder(topLevel) && !_knownPlayerFolders.Contains(topLevel);
         }
 
         /// <summary>Scans our own craft folders and queues every new or changed craft</summary>
         private void ScanAndQueueOwnCraftChanges()
         {
             var playerName = OwnPlayerName();
+            var ownFolderName = OwnFolderName();
             if (playerName == null) return;
 
             var seenCrafts = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
             foreach (var craftType in CraftLibraryPath.AllTypes)
             {
-                var playerFolder = GetPlayerFolder(playerName, craftType);
+                var playerFolder = GetPlayerFolder(ownFolderName, craftType);
 
                 foreach (var file in CraftFiles(playerFolder))
                 {
@@ -633,18 +667,20 @@ namespace LmpClient.Systems.CraftLibrary
             var playerName = OwnPlayerName();
             if (playerName == null) return;
 
+            var ownFolderName = OwnFolderName();
+
             //Propagated only once per session, a later pass must not delete crafts created after we connected
             if (!_offlineDeletionsPropagated)
             {
                 _offlineDeletionsPropagated = true;
 
-                foreach (var craft in _serverLibrary.Where(c => IsOwnPlayer(c.FolderName, playerName)))
+                foreach (var craft in _serverLibrary.Where(c => IsOwnFolder(LocalFolderNameOf(c.FolderName))))
                 {
                     if (!_ownFolderExisted.Contains(craft.CraftType)) continue;
                     if (_ownCraftsSeen.Contains(craft)) continue;
 
                     //The transfer restored the deleted craft, remove it again
-                    var directory = GetCraftDirectory(craft.FolderName, craft.CraftType, craft.CraftFolder);
+                    var directory = GetCraftDirectory(LocalFolderNameOf(craft.FolderName), craft.CraftType, craft.CraftFolder);
                     if (directory != null)
                     {
                         var restoredPath = CommonUtil.CombinePaths(directory, $"{craft.CraftName}.craft");
@@ -661,7 +697,7 @@ namespace LmpClient.Systems.CraftLibrary
                 }
             }
 
-            var libraryPlayers = new HashSet<string>(_serverLibrary.Select(c => c.FolderName), StringComparer.OrdinalIgnoreCase);
+            var libraryPlayers = new HashSet<string>(_serverLibrary.Select(c => LocalFolderNameOf(c.FolderName)), StringComparer.OrdinalIgnoreCase);
 
             foreach (var craftType in CraftLibraryPath.AllTypes)
             {
@@ -670,7 +706,7 @@ namespace LmpClient.Systems.CraftLibrary
                 foreach (var dir in SubFolders(rootFolder))
                 {
                     var folderName = new DirectoryInfo(dir).Name;
-                    if (IsOwnPlayer(folderName, playerName)) continue;
+                    if (IsOwnFolder(folderName)) continue;
 
                     //No crafts from this player anymore
                     if (!libraryPlayers.Contains(folderName))
@@ -695,7 +731,7 @@ namespace LmpClient.Systems.CraftLibrary
                 }
 
                 //Our own crafts
-                var playerFolder = GetPlayerFolder(playerName, craftType);
+                var playerFolder = GetPlayerFolder(ownFolderName, craftType);
 
                 foreach (var file in CraftFiles(playerFolder))
                 {
@@ -843,16 +879,31 @@ namespace LmpClient.Systems.CraftLibrary
             return string.IsNullOrEmpty(playerName) ? null : playerName;
         }
 
-        private static bool IsOwnCraft(string folderName)
+        /// <summary>The folder of the connected player, it ends in "(me)" so it is ours</summary>
+        private static string OwnFolderName()
         {
             var playerName = OwnPlayerName();
-            return playerName != null && IsOwnPlayer(folderName, playerName);
+            return playerName == null ? null : CraftLibraryOwnFolder.NameFor(playerName);
         }
 
-        /// <summary>Ignoring the case, a KSP file system does not tell "Alice" from "alice"</summary>
-        private static bool IsOwnPlayer(string folderName, string playerName)
+        /// <summary>True when a folder on disk holds the crafts of the local player</summary>
+        private static bool IsOwnFolder(string folderName)
         {
-            return string.Equals(folderName, playerName, StringComparison.OrdinalIgnoreCase);
+            return CraftLibraryOwnFolder.IsOwnFolder(folderName);
+        }
+
+        /// <summary>
+        /// The local name of the folder the server keeps in the given name: ours carries the suffix, every
+        /// other player is named after him. The only place the player name is compared
+        /// </summary>
+        private static string LocalFolderNameOf(string protocolFolderName)
+        {
+            var playerName = OwnPlayerName();
+            if (playerName == null) return protocolFolderName;
+
+            return string.Equals(protocolFolderName, playerName, StringComparison.OrdinalIgnoreCase)
+                ? OwnFolderName()
+                : protocolFolderName;
         }
 
         private static string GetRootFolder(CraftType craftType)
@@ -870,7 +921,7 @@ namespace LmpClient.Systems.CraftLibrary
             }
         }
 
-        /// <summary>Folder of a player inside the LMP save, shown as a subdirectory in the craft dialogs</summary>
+        /// <summary>Folder holding the crafts of a player inside the LMP save, shown as a subdirectory in the craft dialogs</summary>
         private static string GetPlayerFolder(string folderName, CraftType craftType)
         {
             return CommonUtil.CombinePaths(GetRootFolder(craftType), folderName);
@@ -893,7 +944,8 @@ namespace LmpClient.Systems.CraftLibrary
             return CraftLibraryPath.CraftNameIsValid(craft.CraftName)
                    && CraftLibraryPath.CraftFolderIsValid(craft.CraftFolder)
                    && CraftLibraryPath.IsValidCraftType(craft.CraftType)
-                   && CraftLibraryPath.PlayerFolderIsValid(craft.FolderName);
+                   && CraftLibraryPath.PlayerFolderIsValid(craft.FolderName)
+                   && !IsOwnFolder(craft.FolderName);
         }
 
         private static bool IsValidLibraryCraft(LibraryCraft craft)
@@ -901,13 +953,15 @@ namespace LmpClient.Systems.CraftLibrary
             return CraftLibraryPath.CraftNameIsValid(craft.CraftName)
                    && CraftLibraryPath.CraftFolderIsValid(craft.CraftFolder)
                    && CraftLibraryPath.IsValidCraftType(craft.CraftType)
-                   && CraftLibraryPath.PlayerFolderIsValid(craft.FolderName);
+                   && CraftLibraryPath.PlayerFolderIsValid(craft.FolderName)
+                   && !IsOwnFolder(craft.FolderName);
         }
 
         private static string InvalidCraftReason(LibraryCraft craft)
         {
             if (!CraftLibraryPath.CraftNameIsValid(craft.CraftName, out var reason)) return reason;
             if (!CraftLibraryPath.CraftFolderIsValid(craft.CraftFolder, out reason)) return reason;
+            if (IsOwnFolder(craft.FolderName)) return "the folder name is reserved for the own craft folder";
 
             return "unknown craft type";
         }

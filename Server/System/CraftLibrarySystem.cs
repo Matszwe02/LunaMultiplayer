@@ -30,6 +30,12 @@ namespace Server.System
         {
             var craft = data.Craft;
 
+            if (CraftLibraryOwnFolder.IsOwnFolder(craft.FolderName))
+            {
+                LunaLog.Warning($"{client.PlayerName} tried to save a craft in a reserved craft folder ({craft.FolderName}). Denied.");
+                return;
+            }
+
             if (!string.Equals(client.PlayerName, craft.FolderName, StringComparison.Ordinal))
             {
                 LunaLog.Warning($"{client.PlayerName} tried to save a craft in another player's folder ({craft.FolderName}). Denied.");
@@ -84,6 +90,12 @@ namespace Server.System
 
         public static void DeleteCraft(ClientStructure client, CraftLibraryDeleteMsgData data)
         {
+            if (CraftLibraryOwnFolder.IsOwnFolder(data.FolderName))
+            {
+                LunaLog.Warning($"{client.PlayerName} tried to delete a craft in a reserved craft folder ({data.FolderName}). Denied.");
+                return;
+            }
+
             if (!string.Equals(client.PlayerName, data.FolderName, StringComparison.Ordinal))
             {
                 LunaLog.Warning($"{client.PlayerName} tried to delete a craft in another player's folder ({data.FolderName}). Denied.");
