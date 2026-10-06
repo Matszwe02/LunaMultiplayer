@@ -14,24 +14,15 @@ namespace LmpClient.Systems.CraftLibrary
 {
     /// <summary>
     /// Makes the vehicle editor show the craft folders the library changed while the editor is already
-    /// open. KSP builds the craft folder tree and the craft list when it spawns the craft dialog and
-    /// when it is re-shown, never while it stays open, so a craft the library writes or removes stays
-    /// invisible until the player leaves and re-enters the editor. The changes are queued here by the
-    /// threads doing the IO and applied on the Unity thread once the writes settled, because a rebuild
-    /// reads every craft of the folder again.
+    /// open.
     /// </summary>
     internal static class CraftLibraryEditorRefresh
     {
         #region Fields
 
-        /// <summary>The editor keeps the dialog it is using in a private field, so it has to be reflected out</summary>
         private static readonly FieldInfo CraftBrowserDialogField = typeof(EditorLogic).GetField("craftBrowserDialog",
             BindingFlags.Instance | BindingFlags.NonPublic);
 
-        /// <summary>
-        /// Only needed to build the folder tree again. KSP offers no way to add a folder to it, so the
-        /// nodes are dropped and the same calls Awake makes are made again
-        /// </summary>
         private static readonly FieldInfo ContentAreaField = typeof(DirectoryController).GetField("contentArea",
             BindingFlags.Instance | BindingFlags.NonPublic);
 
@@ -44,31 +35,14 @@ namespace LmpClient.Systems.CraftLibrary
         private static readonly MethodInfo BuildSteamDirectoryMethod = typeof(DirectoryController).GetMethod("BuildSteamDirectoryUI",
             BindingFlags.Instance | BindingFlags.NonPublic);
 
-        /// <summary>
-        /// The craft types whose craft list is out of date. A set and not a queue, a transfer writes
-        /// hundreds of crafts and only one rebuild per type is needed
-        /// </summary>
         private static readonly ConcurrentDictionary<CraftType, byte> PendingCraftTypes
             = new ConcurrentDictionary<CraftType, byte>();
 
-        /// <summary>
-        /// The craft types whose folders appeared or disappeared. The dialog keeps a node per folder and
-        /// has no way of learning about one the library created while it was open
-        /// </summary>
         private static readonly ConcurrentDictionary<CraftType, byte> PendingFolderTypes
             = new ConcurrentDictionary<CraftType, byte>();
 
-        /// <summary>
-        /// A rebuild parses every craft of the folder, so the refresh waits for the writes to stop and a
-        /// whole library transfer results in a single rebuild instead of one per craft
-        /// </summary>
         private const int SettleTimeMs = 500;
 
-        /// <summary>
-        /// Prefix of a folder node that is being replaced. The stock and the workshop folders are looked
-        /// up by name and Unity only destroys at the end of the frame, so the old nodes are renamed to
-        /// not be found next to the new ones
-        /// </summary>
         private const string StaleNodeName = "LMPStale";
 
         private static long _lastChangeTimeTicks;
